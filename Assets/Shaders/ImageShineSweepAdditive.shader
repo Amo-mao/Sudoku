@@ -1,0 +1,138 @@
+Shader "Custom/UI/Image Shine Sweep Additive"
+{
+    Properties
+    {
+        [HideInInspector][PerRendererData] _MainTex ("Sprite Texture", 2D) = "white" {}
+        [HideInInspector] _Color ("Tint", Color) = (1,1,1,1)
+
+        [HideInInspector] _ShineColor ("Shine Color", Color) = (1,1,1,1)
+        [HideInInspector] _ShineIntensity ("Shine Intensity", Range(0, 5)) = 1.5
+        [HideInInspector] _BaseVisibility ("Base Visibility", Range(0, 1)) = 0
+        [HideInInspector] _ShineWidth ("Shine Width", Range(0.001, 1)) = 0.12
+        [HideInInspector] _ShineSoftness ("Shine Softness", Range(0.001, 1)) = 0.08
+        [HideInInspector] _ShineAngle ("Shine Angle", Range(0, 360)) = 35
+        [HideInInspector] _ShineSpeed ("Shine Speed", Range(-5, 5)) = 0.8
+        [HideInInspector] _ShineProgress ("Manual Progress", Range(0, 1)) = 0
+
+        [HideInInspector] _StencilComp ("Stencil Comparison", Float) = 8
+        [HideInInspector] _Stencil ("Stencil ID", Float) = 0
+        [HideInInspector] _StencilOp ("Stencil Operation", Float) = 0
+        [HideInInspector] _StencilWriteMask ("Stencil Write Mask", Float) = 255
+        [HideInInspector] _StencilReadMask ("Stencil Read Mask", Float) = 255
+        [HideInInspector] _ColorMask ("Color Mask", Float) = 15
+        [HideInInspector][Toggle(UNITY_UI_ALPHACLIP)] _UseUIAlphaClip ("Use Alpha Clip", Float) = 0
+    }
+
+    SubShader
+    {
+        Tags
+        {
+            "Queue"="Transparent"
+            "IgnoreProjector"="True"
+            "RenderType"="Transparent"
+            "PreviewType"="Plane"
+            "CanUseSpriteAtlas"="True"
+        }
+
+        Stencil
+        {
+            Ref [_Stencil]
+            Comp [_StencilComp]
+            Pass [_StencilOp]
+            ReadMask [_StencilReadMask]
+            WriteMask [_StencilWriteMask]
+        }
+
+        Cull Off
+        Lighting Off
+        ZWrite Off
+        ZTest [unity_GUIZTestMode]
+        Blend SrcAlpha One
+        ColorMask [_ColorMask]
+
+        Pass
+        {
+            Name "Default"
+
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma fragment frag
+            #pragma target 2.0
+            #pragma multi_compile __ UNITY_UI_CLIP_RECT
+            #pragma multi_compile __ UNITY_UI_ALPHACLIP
+
+            #include "UnityCG.cginc"
+            #include "UnityUI.cginc"
+
+            struct appdata_t
+            {
+                float4 vertex : POSITION;
+                float4 color : COLOR;
+                float2 texcoord : TEXCOORD0;
+            };
+
+            struct v2f
+            {
+                float4 vertex : SV_POSITION;
+                fixed4 color : COLOR;
+                float2 texcoord : TEXCOORD0;
+                float4 worldPosition : TEXCOORD1;
+            };
+
+            sampler2D _MainTex;
+            fixed4 _Color;
+            fixed4 _TextureSampleAdd;
+            float4 _ClipRect;
+
+            fixed4 _ShineColor;
+            float _ShineIntensity;
+            float _BaseVisibility;
+            float _ShineWidth;
+            float _ShineSoftness;
+            float _ShineAngle;
+            float _ShineSpeed;
+            float _ShineProgress;
+
+            v2f vert(appdata_t v)
+            {
+                v2f o;
+                o.worldPosition = v.vertex;
+                o.vertex = UnityObjectToClipPos(v.vertex);
+                o.texcoord = v.texcoord;
+                o.color = v.color * _Color;
+                return o;
+            }
+
+            fixed4 frag(v2f i) : SV_Target
+            {
+                fixed4 color = (tex2D(_MainTex, i.texcoord) + _TextureSampleAdd) * i.color;
+                fixed sourceAlpha = color.a;
+
+                float angle = radians(_ShineAngle);
+                float2 direction = normalize(float2(cos(angle), sin(angle)));
+                float projection = dot(i.texcoord - 0.5, direction) + 0.5;
+                float position = frac(_ShineProgress + _Time.y * _ShineSpeed) * 2.0 - 0.5;
+                float distanceToBand = abs(projection - position);
+                float shine = smoothstep(_ShineWidth, max(0.0001, _ShineWidth - _ShineSoftness), distanceToBand);
+                float shineAmount = shine * _ShineColor.a * _ShineIntensity;
+
+                color.rgb = color.rgb * _BaseVisibility + _ShineColor.rgb * shineAmount * sourceAlpha;
+                color.a = sourceAlpha * saturate(max(_BaseVisibility, shineAmount));
+
+                #ifdef UNITY_UI_CLIP_RECT
+                color.a *= UnityGet2DClipping(i.worldPosition.xy, _ClipRect);
+                #endif
+
+                #ifdef UNITY_UI_ALPHACLIP
+                clip(color.a - 0.001);
+                #endif
+
+                return color;
+            }
+            ENDCG
+        }
+    }
+
+    FallBack "UI/Default"
+    CustomEditor "ImageShineSweepHiddenShaderGUI"
+}
