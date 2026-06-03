@@ -13,8 +13,8 @@ public sealed class SudukuBoardLayout : MonoBehaviour
     [SerializeField] private bool rebuildWhenValidated;
 
     [Header("Board Size")]
-    [SerializeField, Min(1f)] private float boardSize = 716f;
-    [SerializeField, Min(1f)] private float cellSize = 78f;
+    [SerializeField, Min(1f)] private float boardSize = 671f;
+    [SerializeField, Min(1f)] private float cellSize = 73f;
     [SerializeField, Min(0f)] private float thinLineSize = 1f;
     [SerializeField, Min(0f)] private float thickLineSize = 2f;
     [SerializeField, Min(0f)] private float outerLineSize = 2f;
@@ -56,11 +56,11 @@ public sealed class SudukuBoardLayout : MonoBehaviour
         }
     }
 
-    [ContextMenu("Apply 716 Board Size")]
-    public void ApplyRecommended716Size()
+    [ContextMenu("Apply 671 Board Size")]
+    public void ApplyRecommended671Size()
     {
-        boardSize = 716f;
-        cellSize = 78f;
+        boardSize = 671f;
+        cellSize = 73f;
         thinLineSize = 1f;
         thickLineSize = 2f;
         outerLineSize = 2f;
@@ -158,22 +158,26 @@ public sealed class SudukuBoardLayout : MonoBehaviour
 
     private void CreateGridLines()
     {
-        float cursor = -boardSize * 0.5f;
+        CreateGridLinesByType(GridLineType.Thin);
+        CreateGridLinesByType(GridLineType.Thick);
+        CreateGridLinesByType(GridLineType.Outer);
+    }
 
+    private void CreateGridLinesByType(GridLineType lineType)
+    {
         for (int line = 0; line <= 9; line++)
         {
-            float lineSize = GetLineSize(line);
-            float center = cursor + lineSize * 0.5f;
+            if (GetLineType(line) != lineType)
+            {
+                continue;
+            }
 
+            float lineSize = GetLineSize(line);
+            float center = GetLineCenterPosition(line);
             Color color = GetLineColor(line);
 
             CreateLine($"{GeneratedNamePrefix}VerticalLine_{line}", true, center, lineSize, color);
             CreateLine($"{GeneratedNamePrefix}HorizontalLine_{line}", false, -center, lineSize, color);
-
-            if (line < 9)
-            {
-                cursor += lineSize + cellSize;
-            }
         }
     }
 
@@ -234,6 +238,28 @@ public sealed class SudukuBoardLayout : MonoBehaviour
         return lineIndex % 3 == 0 ? thickLineColor : thinLineColor;
     }
 
+    private GridLineType GetLineType(int lineIndex)
+    {
+        if (lineIndex == 0 || lineIndex == 9)
+        {
+            return GridLineType.Outer;
+        }
+
+        return lineIndex % 3 == 0 ? GridLineType.Thick : GridLineType.Thin;
+    }
+
+    private float GetLineCenterPosition(int lineIndex)
+    {
+        float position = -boardSize * 0.5f;
+
+        for (int line = 0; line < lineIndex; line++)
+        {
+            position += GetLineSize(line) + cellSize;
+        }
+
+        return position + GetLineSize(lineIndex) * 0.5f;
+    }
+
     private float GetCellCenterPosition(int index)
     {
         float position = -boardSize * 0.5f + outerLineSize + cellSize * 0.5f;
@@ -262,5 +288,12 @@ public sealed class SudukuBoardLayout : MonoBehaviour
         {
             rectTransform = GetComponent<RectTransform>();
         }
+    }
+
+    private enum GridLineType
+    {
+        Thin,
+        Thick,
+        Outer
     }
 }
