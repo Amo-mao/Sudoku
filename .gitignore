@@ -1,38 +1,31 @@
-# 屏蔽自动生成的解决方案、spine工程
-*.sln
-spine-*.csproj
-*.csproj.user
-*.user
-
-# 例外：必须保留自己主代码工程（!代表不忽略）
-!Assembly-CSharp.csproj
-!Assembly-CSharp-Editor.csproj
-
-# Unity标准忽略规则
+# Unity generated folders
 [Ll]ibrary/
 [Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
 [Ll]ogs/
-[Uu]ser[Ss]ettings/Layouts/
+[Uu]ser[Ss]ettings/
 
-# VS生成工程文件
+# Visual Studio / Rider / generated project files
 *.csproj
 *.sln
 *.suo
 *.user
 *.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
 
-# Unity打包产物
-Build/
-Builds/
-obj/
-# Unity缓存目录
-[Ll]ibrary/
-[Tt]emp/
-[Ll]ogs/
-[Uu]ser[Ss]ettings/Layouts/
+# OS files
+.DS_Store
+Thumbs.db
 
-# VS工程文件
-*.csproj
-*.sln
-*.user
-*.suo
+# Crash reports and logs
+sysinfo.txt
+*.stackdump
+*.log
