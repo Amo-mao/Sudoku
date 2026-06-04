@@ -6,8 +6,11 @@
 [Bb]uilds/
 [Ll]ogs/
 [Uu]ser[Ss]ettings/
+[Mm]emoryCaptures/
+[Rr]ecordings/
 
 # Visual Studio / Rider / generated project files
+.vs/
 *.csproj
 *.sln
 *.suo
@@ -23,9 +26,17 @@
 
 # OS files
 .DS_Store
+**/.DS_Store
 Thumbs.db
+ehthumbs.db
+Desktop.ini
 
 # Crash reports and logs
 sysinfo.txt
 *.stackdump
 *.log
+
+# Optional local-only files
+*.tmp
+*.bak
+*.swp

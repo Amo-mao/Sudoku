@@ -28,6 +28,14 @@
 *.anim text eol=lf
 *.overrideController text eol=lf
 *.playable text eol=lf
+*.physicMaterial text eol=lf
+*.physicsMaterial2D text eol=lf
+*.mask text eol=lf
+*.inputactions text eol=lf
+*.shadergraph text eol=lf
+*.compute text eol=lf
+*.txt text eol=lf
+*.md text eol=lf
 
 # Binary assets
 *.png binary
@@ -35,8 +43,11 @@
 *.jpeg binary
 *.gif binary
 *.bmp binary
+*.exr binary
+*.hdr binary
 *.tga binary
 *.psd binary
+*.psb binary
 *.tif binary
 *.tiff binary
 *.ico binary
@@ -46,8 +57,10 @@
 *.mp4 binary
 *.mov binary
 *.avi binary
+*.webm binary
 *.fbx binary
 *.blend binary
+*.ai binary
 *.ttf binary
 *.otf binary
 *.woff binary
