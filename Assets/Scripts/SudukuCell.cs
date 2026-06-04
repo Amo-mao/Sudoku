@@ -7,15 +7,19 @@ using UnityEngine.UI;
 public sealed class SudukuCell : MonoBehaviour
 {
     private const string ShineSweepAnimationName = "Cell_ShineSweep";
+    private const int NoteCount = 9;
 
     [SerializeField] private TMP_Text valueText;
     [SerializeField] private TMP_Text okValueText;
+    [SerializeField] private RectTransform notesRoot;
+    [SerializeField] private TMP_Text[] noteTexts = new TMP_Text[NoteCount];
     [SerializeField] private Image background;
     [SerializeField] private Color normalColor = Color.white;
     [SerializeField] private Color selectedColor = new Color(0.83f, 0.91f, 1f, 1f);
     [SerializeField] private Color fixedNumberColor = new Color(0.16f, 0.16f, 0.16f, 1f);
     [SerializeField] private Color editableNumberColor = new Color(0.08f, 0.28f, 0.75f, 1f);
     [SerializeField] private Color okNumberColor = Color.white;
+    [SerializeField] private Color noteNumberColor = new Color(0.28f, 0.36f, 0.48f, 1f);
 
     public int Row { get; private set; }
     public int Column { get; private set; }
@@ -23,9 +27,12 @@ public sealed class SudukuCell : MonoBehaviour
     public bool IsFixed { get; private set; }
     public bool IsWrong { get; private set; }
 
+    private readonly bool[] notes = new bool[NoteCount + 1];
+
     private void Awake()
     {
         CacheTextReferences();
+        ConfigureNotesLayout();
         ConfigureFeedbackLayout();
         ConfigureRaycastTargets();
     }
@@ -35,9 +42,11 @@ public sealed class SudukuCell : MonoBehaviour
         Row = row;
         Column = column;
         CacheTextReferences();
+        ConfigureNotesLayout();
         ConfigureFeedbackLayout();
         ConfigureRaycastTargets();
         SetValue(0, false);
+        ClearNotes();
         SetSelected(false);
     }
 
@@ -62,7 +71,38 @@ public sealed class SudukuCell : MonoBehaviour
         string displayText = Value == 0 ? string.Empty : Value.ToString();
         valueText.text = displayText;
         SyncOkValueText(displayText);
+        if (Value != 0)
+        {
+            ClearNotes();
+        }
+        else
+        {
+            RefreshNotes();
+        }
+
         RefreshNumberColor();
+    }
+
+    public void ToggleNote(int value)
+    {
+        if (value < 1 || value > NoteCount || IsFixed || Value != 0)
+        {
+            return;
+        }
+
+        ConfigureNotesLayout();
+        notes[value] = !notes[value];
+        RefreshNotes();
+    }
+
+    public void ClearNotes()
+    {
+        for (int value = 1; value <= NoteCount; value++)
+        {
+            notes[value] = false;
+        }
+
+        RefreshNotes();
     }
 
     public void SetWrong(bool isWrong)
@@ -166,6 +206,115 @@ public sealed class SudukuCell : MonoBehaviour
         }
 
         AlignOkValueText();
+    }
+
+    private void ConfigureNotesLayout()
+    {
+        if (notesRoot == null)
+        {
+            Transform existingRoot = transform.Find("NotesRoot");
+            if (existingRoot != null)
+            {
+                notesRoot = existingRoot as RectTransform;
+            }
+        }
+
+        if (notesRoot == null)
+        {
+            GameObject rootObject = new GameObject("NotesRoot", typeof(RectTransform));
+            rootObject.transform.SetParent(transform, false);
+            notesRoot = rootObject.GetComponent<RectTransform>();
+        }
+
+        StretchToParent(notesRoot);
+        notesRoot.SetAsLastSibling();
+
+        if (noteTexts == null || noteTexts.Length != NoteCount)
+        {
+            noteTexts = new TMP_Text[NoteCount];
+        }
+
+        for (int value = 1; value <= NoteCount; value++)
+        {
+            int index = value - 1;
+            if (noteTexts[index] == null)
+            {
+                Transform existingNote = notesRoot.Find($"Note_{value}");
+                if (existingNote != null)
+                {
+                    noteTexts[index] = existingNote.GetComponent<TMP_Text>();
+                }
+            }
+
+            if (noteTexts[index] == null)
+            {
+                noteTexts[index] = CreateNoteText(value);
+            }
+
+            ConfigureNoteTransform(noteTexts[index].rectTransform, index);
+            ConfigureNoteTextStyle(noteTexts[index]);
+        }
+
+        RefreshNotes();
+    }
+
+    private TMP_Text CreateNoteText(int value)
+    {
+        GameObject noteObject = new GameObject($"Note_{value}", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        noteObject.transform.SetParent(notesRoot, false);
+        return noteObject.GetComponent<TMP_Text>();
+    }
+
+    private void ConfigureNoteTransform(RectTransform rectTransform, int index)
+    {
+        int row = index / 3;
+        int column = index % 3;
+
+        rectTransform.anchorMin = new Vector2(column / 3f, 1f - (row + 1) / 3f);
+        rectTransform.anchorMax = new Vector2((column + 1) / 3f, 1f - row / 3f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.anchoredPosition = Vector2.zero;
+        rectTransform.sizeDelta = Vector2.zero;
+    }
+
+    private void ConfigureNoteTextStyle(TMP_Text noteText)
+    {
+        noteText.alignment = TextAlignmentOptions.Center;
+        noteText.enableAutoSizing = true;
+        noteText.fontSizeMin = 8f;
+        noteText.fontSizeMax = valueText != null ? Mathf.Max(12f, valueText.fontSize * 0.38f) : 18f;
+        noteText.color = noteNumberColor;
+        noteText.raycastTarget = false;
+
+        if (valueText != null)
+        {
+            noteText.font = valueText.font;
+            noteText.fontSharedMaterial = valueText.fontSharedMaterial;
+        }
+    }
+
+    private void RefreshNotes()
+    {
+        if (notesRoot != null)
+        {
+            notesRoot.gameObject.SetActive(Value == 0);
+        }
+
+        if (noteTexts == null)
+        {
+            return;
+        }
+
+        for (int value = 1; value <= NoteCount; value++)
+        {
+            int index = value - 1;
+            if (index >= noteTexts.Length || noteTexts[index] == null)
+            {
+                continue;
+            }
+
+            noteTexts[index].text = Value == 0 && notes[value] ? value.ToString() : string.Empty;
+        }
     }
 
     private void SyncOkValueText(string displayText)

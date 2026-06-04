@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+using Spine.Unity;
 
 [DisallowMultipleComponent]
 [AddComponentMenu("UI/Suduku Game Controller")]
@@ -20,6 +21,19 @@ public sealed class SudukuGameController : MonoBehaviour
     [Header("Number Colors")]
     [SerializeField] private Color wrongNumberColor = new Color(0.85f, 0.12f, 0.12f, 1f);
 
+    [Header("Note Mode")]
+    [SerializeField] private Button noteModeButton;
+    [SerializeField] private SkeletonGraphic noteModeSkeletonGraphic;
+    [SerializeField] private SkeletonAnimation noteModeSkeletonAnimation;
+    [SerializeField] private string noteModeIdleAnimation = "idle";
+    [SerializeField] private string noteModeActiveAnimation = "activate";
+
+    [Header("Math Challenge")]
+    [SerializeField] private MathChallengePopup mathChallengePopup;
+    [SerializeField] private GameObject mathChallengePrefab;
+    [SerializeField] private Transform mathChallengeParent;
+    [SerializeField, Min(1)] private int wrongPlacementsBeforeMathChallenge = 2;
+
     [Header("Cell Highlight Colors")]
     [SerializeField] private Color normalCellColor = Color.white;
     [SerializeField] private Color relatedCellColor = new Color(0.9f, 0.95f, 1f, 1f);
@@ -36,6 +50,9 @@ public sealed class SudukuGameController : MonoBehaviour
 
     private SudukuCell selectedCell;
     private int selectedNumber;
+    private int consecutiveWrongPlacements;
+    private bool isMathChallengeActive;
+    private bool isNoteMode;
     private Coroutine shineSweepRoutine;
 
     private struct MoveRecord
@@ -53,6 +70,7 @@ public sealed class SudukuGameController : MonoBehaviour
         }
 
         PrepareCells(true);
+        PrepareMathChallengePopup();
         BindCellButtons();
         BindControlButtons();
     }
@@ -85,13 +103,27 @@ public sealed class SudukuGameController : MonoBehaviour
         RefreshCompletedUnitCache();
         history.Clear();
         selectedNumber = EmptyValue;
+        consecutiveWrongPlacements = 0;
+        isMathChallengeActive = false;
+        SetNoteMode(false);
         SelectCell(null);
     }
 
     public void InputNumber(int value)
     {
+        if (isMathChallengeActive)
+        {
+            return;
+        }
+
         value = Mathf.Clamp(value, EmptyValue, BoardLength);
         selectedNumber = value;
+
+        if (isNoteMode)
+        {
+            InputNote(value);
+            return;
+        }
 
         if (selectedCell == null || selectedCell.IsFixed)
         {
@@ -113,13 +145,26 @@ public sealed class SudukuGameController : MonoBehaviour
         });
 
         SudukuCell changedCell = selectedCell;
-        selectedCell.SetValue(value, false, IsWrongValue(selectedCell, value));
+        bool isWrongPlacement = IsWrongValue(selectedCell, value);
+        selectedCell.SetValue(value, false, isWrongPlacement);
         RefreshBoardState();
+
+        UpdateWrongPlacementStreak(value, isWrongPlacement);
+        if (isMathChallengeActive)
+        {
+            return;
+        }
+
         TriggerNewlyCompletedUnits(changedCell);
     }
 
     public void UndoLastMove()
     {
+        if (isMathChallengeActive)
+        {
+            return;
+        }
+
         while (history.Count > 0)
         {
             MoveRecord move = history.Pop();
@@ -133,6 +178,195 @@ public sealed class SudukuGameController : MonoBehaviour
             SelectCell(move.Cell);
             return;
         }
+    }
+
+    public void ToggleNoteMode()
+    {
+        SetNoteMode(!isNoteMode);
+    }
+
+    private void PrepareMathChallengePopup()
+    {
+        if (mathChallengePopup == null)
+        {
+            MathChallengePopup[] foundPopups = FindObjectsByType<MathChallengePopup>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            if (foundPopups.Length > 0)
+            {
+                mathChallengePopup = foundPopups[0];
+            }
+        }
+
+        if (mathChallengePopup == null)
+        {
+            Transform mathTransform = FindSceneTransformByName("Object_Math");
+            if (mathTransform != null)
+            {
+                GameObject mathObject = mathTransform.gameObject;
+                mathChallengePopup = mathObject.GetComponent<MathChallengePopup>();
+                if (mathChallengePopup == null)
+                {
+                    mathChallengePopup = mathObject.AddComponent<MathChallengePopup>();
+                }
+            }
+        }
+
+        if (mathChallengePopup == null && mathChallengePrefab != null)
+        {
+            Transform parent = mathChallengeParent != null ? mathChallengeParent : transform.root;
+            GameObject popupObject = Instantiate(mathChallengePrefab, parent);
+            mathChallengePopup = popupObject.GetComponent<MathChallengePopup>();
+            if (mathChallengePopup == null)
+            {
+                mathChallengePopup = popupObject.AddComponent<MathChallengePopup>();
+            }
+        }
+
+        if (mathChallengePopup != null)
+        {
+            mathChallengePopup.Initialize(true);
+        }
+    }
+
+    private static Transform FindSceneTransformByName(string objectName)
+    {
+        Transform[] transforms = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Transform foundTransform in transforms)
+        {
+            if (foundTransform.name == objectName)
+            {
+                return foundTransform;
+            }
+        }
+
+        return null;
+    }
+
+    private void UpdateWrongPlacementStreak(int value, bool isWrongPlacement)
+    {
+        if (value == EmptyValue)
+        {
+            return;
+        }
+
+        if (!isWrongPlacement)
+        {
+            consecutiveWrongPlacements = 0;
+            return;
+        }
+
+        consecutiveWrongPlacements++;
+        if (consecutiveWrongPlacements < wrongPlacementsBeforeMathChallenge)
+        {
+            return;
+        }
+
+        OpenMathChallenge();
+    }
+
+    private void OpenMathChallenge()
+    {
+        if (mathChallengePopup == null)
+        {
+            PrepareMathChallengePopup();
+        }
+
+        if (mathChallengePopup == null)
+        {
+            Debug.LogWarning("SudukuGameController needs Object_Math or a Math Challenge Prefab to show the math challenge.", this);
+            consecutiveWrongPlacements = 0;
+            return;
+        }
+
+        isMathChallengeActive = true;
+        consecutiveWrongPlacements = 0;
+        mathChallengePopup.Show(ResumeAfterMathChallenge);
+    }
+
+    private void ResumeAfterMathChallenge()
+    {
+        isMathChallengeActive = false;
+        RefreshBoardState();
+    }
+
+    private void InputNote(int value)
+    {
+        if (value == EmptyValue)
+        {
+            RefreshBoardState();
+            return;
+        }
+
+        if (selectedCell == null || selectedCell.IsFixed || selectedCell.Value != EmptyValue)
+        {
+            RefreshBoardState();
+            return;
+        }
+
+        selectedCell.ToggleNote(value);
+        RefreshBoardState();
+    }
+
+    private void SetNoteMode(bool enabled)
+    {
+        isNoteMode = enabled;
+        RefreshNoteModeAnimation();
+    }
+
+    private void RefreshNoteModeAnimation()
+    {
+        CacheNoteModeSpine();
+        string animationName = isNoteMode ? noteModeActiveAnimation : noteModeIdleAnimation;
+        PlayNoteModeAnimation(animationName);
+    }
+
+    private void CacheNoteModeSpine()
+    {
+        if (noteModeButton == null)
+        {
+            return;
+        }
+
+        if (noteModeSkeletonGraphic == null)
+        {
+            noteModeSkeletonGraphic = noteModeButton.GetComponentInChildren<SkeletonGraphic>(true);
+        }
+
+        if (noteModeSkeletonAnimation == null)
+        {
+            noteModeSkeletonAnimation = noteModeButton.GetComponentInChildren<SkeletonAnimation>(true);
+        }
+    }
+
+    private void PlayNoteModeAnimation(string animationName)
+    {
+        if (string.IsNullOrEmpty(animationName))
+        {
+            return;
+        }
+
+        if (noteModeSkeletonGraphic != null)
+        {
+            noteModeSkeletonGraphic.Initialize(false);
+            if (HasSpineAnimation(noteModeSkeletonGraphic.AnimationState, animationName))
+            {
+                noteModeSkeletonGraphic.AnimationState.SetAnimation(0, animationName, true);
+                return;
+            }
+        }
+
+        if (noteModeSkeletonAnimation != null)
+        {
+            noteModeSkeletonAnimation.Initialize(false);
+            if (HasSpineAnimation(noteModeSkeletonAnimation.AnimationState, animationName))
+            {
+                noteModeSkeletonAnimation.AnimationState.SetAnimation(0, animationName, true);
+            }
+        }
+    }
+
+    private static bool HasSpineAnimation(Spine.AnimationState animationState, string animationName)
+    {
+        return animationState?.Data?.SkeletonData?.FindAnimation(animationName) != null;
     }
 
     private void PrepareCells(bool forceRebuild)
@@ -185,6 +419,19 @@ public sealed class SudukuGameController : MonoBehaviour
         {
             if (button.GetComponent<SudukuCell>() != null)
             {
+                continue;
+            }
+
+            if (mathChallengePopup != null && button.transform.IsChildOf(mathChallengePopup.transform))
+            {
+                continue;
+            }
+
+            if (button == noteModeButton || IsNoteModeButton(button))
+            {
+                noteModeButton = button;
+                noteModeButton.onClick.AddListener(ToggleNoteMode);
+                RefreshNoteModeAnimation();
                 continue;
             }
 
@@ -545,12 +792,25 @@ public sealed class SudukuGameController : MonoBehaviour
 
     private static bool IsReturnButton(Button button)
     {
-        return HasImageSpriteNamed(button, "返回");
+        return HasImageSpriteNamed(button, "返回") || HasButtonText(button, "return");
     }
 
     private static bool IsEraseButton(Button button)
     {
-        return HasImageSpriteNamed(button, "橡皮擦");
+        return HasImageSpriteNamed(button, "橡皮擦") || HasButtonText(button, "erase");
+    }
+
+    private static bool IsNoteModeButton(Button button)
+    {
+        return button.name == "Button (2)" ||
+               HasButtonText(button, "note") ||
+               HasButtonText(button, "notes");
+    }
+
+    private static bool HasButtonText(Button button, string expectedText)
+    {
+        TMP_Text text = button.GetComponentInChildren<TMP_Text>(true);
+        return text != null && string.Equals(text.text.Trim(), expectedText, System.StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool HasImageSpriteNamed(Button button, string spriteName)
