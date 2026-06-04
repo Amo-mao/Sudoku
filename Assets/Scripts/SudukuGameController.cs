@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
@@ -10,6 +11,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private const int BoardLength = 9;
     private const int BoxLength = 3;
     private const int EmptyValue = 0;
+    private const int ShineSweepFrameStagger = 15;
 
     [SerializeField] private SudukuBoardLayout boardLayout;
     [SerializeField, Range(20, 64)] private int holesToDig = 45;
@@ -28,9 +30,13 @@ public sealed class SudukuGameController : MonoBehaviour
     private readonly int[,] solution = new int[BoardLength, BoardLength];
     private readonly int[,] puzzle = new int[BoardLength, BoardLength];
     private readonly Stack<MoveRecord> history = new Stack<MoveRecord>();
+    private readonly bool[] completedRows = new bool[BoardLength];
+    private readonly bool[] completedColumns = new bool[BoardLength];
+    private readonly bool[] completedBoxes = new bool[BoardLength];
 
     private SudukuCell selectedCell;
     private int selectedNumber;
+    private Coroutine shineSweepRoutine;
 
     private struct MoveRecord
     {
@@ -76,6 +82,7 @@ public sealed class SudukuGameController : MonoBehaviour
         CopyBoard(solution, puzzle);
         DigHolesWithUniqueSolution(puzzle, holesToDig);
         ApplyPuzzle();
+        RefreshCompletedUnitCache();
         history.Clear();
         selectedNumber = EmptyValue;
         SelectCell(null);
@@ -105,8 +112,10 @@ public sealed class SudukuGameController : MonoBehaviour
             NewValue = value
         });
 
+        SudukuCell changedCell = selectedCell;
         selectedCell.SetValue(value, false, IsWrongValue(selectedCell, value));
         RefreshBoardState();
+        TriggerNewlyCompletedUnits(changedCell);
     }
 
     public void UndoLastMove()
@@ -120,6 +129,7 @@ public sealed class SudukuGameController : MonoBehaviour
             }
 
             move.Cell.SetValue(move.PreviousValue, false, IsWrongValue(move.Cell, move.PreviousValue));
+            RefreshCompletedUnitCache();
             SelectCell(move.Cell);
             return;
         }
@@ -221,6 +231,210 @@ public sealed class SudukuGameController : MonoBehaviour
         }
     }
 
+    private void RefreshCompletedUnitCache()
+    {
+        for (int index = 0; index < BoardLength; index++)
+        {
+            completedRows[index] = IsRowComplete(index);
+            completedColumns[index] = IsColumnComplete(index);
+            completedBoxes[index] = IsBoxComplete(index);
+        }
+    }
+
+    private void TriggerNewlyCompletedUnits(SudukuCell centerCell)
+    {
+        if (centerCell == null || centerCell.Value == EmptyValue || centerCell.IsWrong)
+        {
+            RefreshCompletedUnitCache();
+            return;
+        }
+
+        List<SudukuCell> cellsToPlay = new List<SudukuCell>(BoardLength * 3);
+
+        int row = centerCell.Row;
+        int column = centerCell.Column;
+        int box = GetBoxIndex(row, column);
+
+        bool rowComplete = IsRowComplete(row);
+        if (rowComplete && !completedRows[row])
+        {
+            AddRowCells(row, cellsToPlay);
+        }
+
+        completedRows[row] = rowComplete;
+
+        bool columnComplete = IsColumnComplete(column);
+        if (columnComplete && !completedColumns[column])
+        {
+            AddColumnCells(column, cellsToPlay);
+        }
+
+        completedColumns[column] = columnComplete;
+
+        bool boxComplete = IsBoxComplete(box);
+        if (boxComplete && !completedBoxes[box])
+        {
+            AddBoxCells(box, cellsToPlay);
+        }
+
+        completedBoxes[box] = boxComplete;
+
+        if (cellsToPlay.Count == 0)
+        {
+            RefreshCompletedUnitCache();
+            return;
+        }
+
+        SortCellsByDistanceFrom(centerCell, cellsToPlay);
+        PlayShineSweepSequence(cellsToPlay);
+        RefreshCompletedUnitCache();
+    }
+
+    private void PlayShineSweepSequence(List<SudukuCell> cellsToPlay)
+    {
+        if (shineSweepRoutine != null)
+        {
+            StopCoroutine(shineSweepRoutine);
+        }
+
+        shineSweepRoutine = StartCoroutine(PlayShineSweepSequenceRoutine(cellsToPlay));
+    }
+
+    private IEnumerator PlayShineSweepSequenceRoutine(List<SudukuCell> cellsToPlay)
+    {
+        for (int index = 0; index < cellsToPlay.Count; index++)
+        {
+            SudukuCell cell = cellsToPlay[index];
+            if (cell != null)
+            {
+                cell.PlayShineSweep();
+            }
+
+            if (index >= cellsToPlay.Count - 1)
+            {
+                continue;
+            }
+
+            for (int frame = 0; frame < ShineSweepFrameStagger; frame++)
+            {
+                yield return null;
+            }
+        }
+
+        shineSweepRoutine = null;
+    }
+
+    private bool IsRowComplete(int row)
+    {
+        for (int column = 0; column < BoardLength; column++)
+        {
+            if (!IsCellComplete(cells[row, column]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsColumnComplete(int column)
+    {
+        for (int row = 0; row < BoardLength; row++)
+        {
+            if (!IsCellComplete(cells[row, column]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsBoxComplete(int box)
+    {
+        int startRow = box / BoxLength * BoxLength;
+        int startColumn = box % BoxLength * BoxLength;
+
+        for (int rowOffset = 0; rowOffset < BoxLength; rowOffset++)
+        {
+            for (int columnOffset = 0; columnOffset < BoxLength; columnOffset++)
+            {
+                if (!IsCellComplete(cells[startRow + rowOffset, startColumn + columnOffset]))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    private bool IsCellComplete(SudukuCell cell)
+    {
+        return cell != null &&
+               cell.Value != EmptyValue &&
+               !IsWrongValue(cell, cell.Value);
+    }
+
+    private void AddRowCells(int row, List<SudukuCell> target)
+    {
+        for (int column = 0; column < BoardLength; column++)
+        {
+            AddCellIfMissing(cells[row, column], target);
+        }
+    }
+
+    private void AddColumnCells(int column, List<SudukuCell> target)
+    {
+        for (int row = 0; row < BoardLength; row++)
+        {
+            AddCellIfMissing(cells[row, column], target);
+        }
+    }
+
+    private void AddBoxCells(int box, List<SudukuCell> target)
+    {
+        int startRow = box / BoxLength * BoxLength;
+        int startColumn = box % BoxLength * BoxLength;
+
+        for (int rowOffset = 0; rowOffset < BoxLength; rowOffset++)
+        {
+            for (int columnOffset = 0; columnOffset < BoxLength; columnOffset++)
+            {
+                AddCellIfMissing(cells[startRow + rowOffset, startColumn + columnOffset], target);
+            }
+        }
+    }
+
+    private static void AddCellIfMissing(SudukuCell cell, List<SudukuCell> target)
+    {
+        if (cell != null && !target.Contains(cell))
+        {
+            target.Add(cell);
+        }
+    }
+
+    private static void SortCellsByDistanceFrom(SudukuCell centerCell, List<SudukuCell> target)
+    {
+        target.Sort((first, second) =>
+        {
+            int firstDistance = GetCellDistance(centerCell, first);
+            int secondDistance = GetCellDistance(centerCell, second);
+            if (firstDistance != secondDistance)
+            {
+                return firstDistance.CompareTo(secondDistance);
+            }
+
+            int rowCompare = first.Row.CompareTo(second.Row);
+            return rowCompare != 0 ? rowCompare : first.Column.CompareTo(second.Column);
+        });
+    }
+
+    private static int GetCellDistance(SudukuCell centerCell, SudukuCell cell)
+    {
+        return Mathf.Abs(cell.Row - centerCell.Row) + Mathf.Abs(cell.Column - centerCell.Column);
+    }
+
     private void ApplyPuzzle()
     {
         for (int row = 0; row < BoardLength; row++)
@@ -285,6 +499,11 @@ public sealed class SudukuGameController : MonoBehaviour
     {
         return first.Row / BoxLength == second.Row / BoxLength &&
                first.Column / BoxLength == second.Column / BoxLength;
+    }
+
+    private static int GetBoxIndex(int row, int column)
+    {
+        return row / BoxLength * BoxLength + column / BoxLength;
     }
 
     private bool IsWrongValue(SudukuCell cell, int value)
