@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -17,20 +18,27 @@ public sealed class MathChallengePopup : MonoBehaviour
     private const string PanelTextName = "Panel_Text";
     private const string AnswerPadName = "Math_an";
     private const string AnswerDisplayName = "Answer_Input";
+    private const string AnswerShadowName = "ImageShadow";
     private const string AnswerPlaceholderTextName = "TextEnter";
     private const string AnswerValueTextName = "Answer_Text";
     private const string SubmitButtonName = "Button_Su";
     private const string QuitButtonName = "Button_Quit";
     private const string AnswerPlaceholder = "Enter your answer";
+    private const string AnswerInputBlueAnimationName = "Answer_Input_blue";
+    private const string AnswerInputRedAnimationName = "Answer_Input_red";
     private const int AnswerCharacterLimit = 4;
 
     [SerializeField] private TMP_Text questionText;
     [SerializeField] private TMP_InputField answerInputField;
     [SerializeField] private TMP_Text answerPlaceholderText;
     [SerializeField] private TMP_Text answerValueText;
+    [SerializeField] private Image answerShadowImage;
+    [SerializeField] private Animation answerShadowAnimation;
     [SerializeField] private Button submitButton;
     [SerializeField] private Button quitButton;
     [SerializeField] private Color placeholderColor = new Color(0.75f, 0.75f, 0.75f, 1f);
+    [SerializeField] private Color answerInputBlueColor = new Color(0f, 0.25f, 1f, 0.55f);
+    [SerializeField] private Color answerInputRedColor = new Color(1f, 0f, 0f, 0.55f);
     [SerializeField, Min(1)] private int minOperand = 1;
     [SerializeField, Min(2)] private int maxOperand = 20;
 
@@ -41,6 +49,7 @@ public sealed class MathChallengePopup : MonoBehaviour
     private bool initialized;
     private bool isUpdatingAnswerInput;
     private bool isOpeningFromShow;
+    private Coroutine answerInputAnimationRoutine;
 
     public bool IsOpen { get; private set; }
 
@@ -182,6 +191,7 @@ public sealed class MathChallengePopup : MonoBehaviour
             SetAnswerInputTextWithoutNotify(currentAnswer);
             RefreshAnswerText();
             ActivateAnswerInput();
+            PlayWrongAnswerInputAnimation();
             return;
         }
 
@@ -209,6 +219,12 @@ public sealed class MathChallengePopup : MonoBehaviour
 
     private void HideImmediate()
     {
+        if (answerInputAnimationRoutine != null)
+        {
+            StopCoroutine(answerInputAnimationRoutine);
+            answerInputAnimationRoutine = null;
+        }
+
         IsOpen = false;
         gameObject.SetActive(false);
     }
@@ -273,6 +289,8 @@ public sealed class MathChallengePopup : MonoBehaviour
             answerValueText.gameObject.SetActive(answerInputField != null || hasAnswer);
             answerValueText.text = hasAnswer ? currentAnswer : string.Empty;
         }
+
+        PlayAnswerInputAnimation(AnswerInputBlueAnimationName);
     }
 
     private void CacheReferences()
@@ -280,6 +298,24 @@ public sealed class MathChallengePopup : MonoBehaviour
         if (animator == null)
         {
             animator = GetComponent<Animator>();
+        }
+
+        if (answerShadowAnimation == null)
+        {
+            Transform answerDisplay = FindDeepChild(transform, AnswerDisplayName);
+            Transform answerShadow = answerDisplay != null
+                ? FindDeepChild(answerDisplay, AnswerShadowName)
+                : FindDeepChild(transform, AnswerShadowName);
+
+            if (answerShadow != null)
+            {
+                answerShadowImage = answerShadow.GetComponent<Image>();
+                answerShadowAnimation = answerShadow.GetComponent<Animation>();
+            }
+        }
+        else if (answerShadowImage == null)
+        {
+            answerShadowImage = answerShadowAnimation.GetComponent<Image>();
         }
 
         if (submitButton == null)
@@ -489,6 +525,76 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
 
         SetAnswerInputTextWithoutNotify(currentAnswer);
+    }
+
+    private void PlayAnswerInputAnimation(string animationName)
+    {
+        if (answerShadowAnimation == null || string.IsNullOrEmpty(animationName))
+        {
+            return;
+        }
+
+        if (animationName == AnswerInputBlueAnimationName && answerInputAnimationRoutine != null)
+        {
+            StopCoroutine(answerInputAnimationRoutine);
+            answerInputAnimationRoutine = null;
+        }
+
+        ApplyAnswerShadowColor(animationName);
+
+        if (answerShadowAnimation.GetClip(animationName) == null)
+        {
+            return;
+        }
+
+        answerShadowAnimation.Stop();
+        answerShadowAnimation.Play(animationName);
+    }
+
+    private void PlayWrongAnswerInputAnimation()
+    {
+        if (answerInputAnimationRoutine != null)
+        {
+            StopCoroutine(answerInputAnimationRoutine);
+            answerInputAnimationRoutine = null;
+        }
+
+        PlayAnswerInputAnimation(AnswerInputRedAnimationName);
+        answerInputAnimationRoutine = StartCoroutine(ReturnAnswerInputToBlueRoutine(GetAnswerInputAnimationLength(AnswerInputRedAnimationName)));
+    }
+
+    private IEnumerator ReturnAnswerInputToBlueRoutine(float waitSeconds)
+    {
+        if (waitSeconds > 0f)
+        {
+            yield return new WaitForSeconds(waitSeconds);
+        }
+
+        answerInputAnimationRoutine = null;
+        PlayAnswerInputAnimation(AnswerInputBlueAnimationName);
+    }
+
+    private float GetAnswerInputAnimationLength(string animationName)
+    {
+        AnimationClip clip = answerShadowAnimation != null ? answerShadowAnimation.GetClip(animationName) : null;
+        return clip != null ? clip.length : 0f;
+    }
+
+    private void ApplyAnswerShadowColor(string animationName)
+    {
+        if (answerShadowImage == null)
+        {
+            return;
+        }
+
+        if (animationName == AnswerInputRedAnimationName)
+        {
+            answerShadowImage.color = answerInputRedColor;
+        }
+        else if (animationName == AnswerInputBlueAnimationName)
+        {
+            answerShadowImage.color = answerInputBlueColor;
+        }
     }
 
     private void HandleAnswerInputChanged(string answer)
