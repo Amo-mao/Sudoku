@@ -1,8 +1,13 @@
 using System;
-using System.Collections;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
+
+public enum MathChallengeExitReason
+{
+    Solved,
+    Quit
+}
 
 [DisallowMultipleComponent]
 [AddComponentMenu("UI/Math Challenge Popup")]
@@ -11,20 +16,27 @@ public sealed class MathChallengePopup : MonoBehaviour
     private const string OpenAnimationName = "Math_open";
     private const string PanelTextName = "Panel_Text";
     private const string AnswerPadName = "Math_an";
+    private const string AnswerDisplayName = "Answer_Input";
+    private const string AnswerPlaceholderTextName = "TextEnter";
+    private const string AnswerValueTextName = "Answer_Text";
     private const string SubmitButtonName = "Button_Su";
+    private const string QuitButtonName = "Button_Quit";
+    private const string AnswerPlaceholder = "Enter your answer";
     private const int AnswerCharacterLimit = 4;
 
     [SerializeField] private TMP_Text questionText;
-    [SerializeField] private TMP_InputField answerInput;
+    [SerializeField] private TMP_Text answerPlaceholderText;
+    [SerializeField] private TMP_Text answerValueText;
     [SerializeField] private Button submitButton;
-    [SerializeField] private bool createMissingInputAtRuntime = true;
+    [SerializeField] private Button quitButton;
+    [SerializeField] private Color placeholderColor = new Color(0.75f, 0.75f, 0.75f, 1f);
     [SerializeField, Min(1)] private int minOperand = 1;
     [SerializeField, Min(2)] private int maxOperand = 20;
 
     private Animator animator;
     private int expectedAnswer;
     private string currentAnswer = string.Empty;
-    private Action completedCallback;
+    private Action<MathChallengeExitReason> completedCallback;
     private bool initialized;
 
     public bool IsOpen { get; private set; }
@@ -36,7 +48,7 @@ public sealed class MathChallengePopup : MonoBehaviour
 
     private void Update()
     {
-        if (!IsOpen || answerInput == null || answerInput.isFocused)
+        if (!IsOpen)
         {
             return;
         }
@@ -60,6 +72,10 @@ public sealed class MathChallengePopup : MonoBehaviour
         {
             SubmitAnswer();
         }
+        else if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            QuitChallenge();
+        }
     }
 
     public void Initialize(bool hideWhenInitialized)
@@ -71,28 +87,25 @@ public sealed class MathChallengePopup : MonoBehaviour
             initialized = true;
         }
 
+        RefreshAnswerText();
+
         if (hideWhenInitialized)
         {
             HideImmediate();
         }
     }
 
-    public void Show(Action onCompleted)
+    public void Show(Action<MathChallengeExitReason> onCompleted)
     {
         Initialize(false);
 
         completedCallback = onCompleted;
         currentAnswer = string.Empty;
         GenerateQuestion();
+        RefreshAnswerText();
 
         gameObject.SetActive(true);
         IsOpen = true;
-
-        if (answerInput != null)
-        {
-            answerInput.SetTextWithoutNotify(string.Empty);
-            FocusAnswerInput();
-        }
 
         if (animator != null)
         {
@@ -100,20 +113,35 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
     }
 
+    public void Show(Action onCompleted)
+    {
+        Show(reason =>
+        {
+            if (reason == MathChallengeExitReason.Solved)
+            {
+                onCompleted?.Invoke();
+            }
+        });
+    }
+
     public void SetAnswerText(string answer)
     {
-        currentAnswer = answer == null ? string.Empty : answer.Trim();
+        string trimmedAnswer = answer == null ? string.Empty : answer.Trim();
+        currentAnswer = trimmedAnswer.Length == 0
+            ? string.Empty
+            : trimmedAnswer.Substring(0, Mathf.Min(trimmedAnswer.Length, AnswerCharacterLimit));
+        RefreshAnswerText();
     }
 
     public void AppendAnswerDigit(int digit)
     {
-        if (digit < 0 || digit > 9)
+        if (digit < 0 || digit > 9 || currentAnswer.Length >= AnswerCharacterLimit)
         {
             return;
         }
 
         currentAnswer += digit.ToString();
-        ApplyCurrentAnswerToInput();
+        RefreshAnswerText();
     }
 
     public void BackspaceAnswer()
@@ -124,28 +152,33 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
 
         currentAnswer = currentAnswer.Substring(0, currentAnswer.Length - 1);
-        ApplyCurrentAnswerToInput();
+        RefreshAnswerText();
     }
 
     public void SubmitAnswer()
     {
-        string submittedAnswer = answerInput != null ? answerInput.text.Trim() : currentAnswer.Trim();
+        string submittedAnswer = currentAnswer.Trim();
         if (!int.TryParse(submittedAnswer, out int value) || value != expectedAnswer)
         {
             currentAnswer = string.Empty;
-            if (answerInput != null)
-            {
-                answerInput.SetTextWithoutNotify(string.Empty);
-                FocusAnswerInput();
-            }
-
+            RefreshAnswerText();
             return;
         }
 
+        Complete(MathChallengeExitReason.Solved);
+    }
+
+    public void QuitChallenge()
+    {
+        Complete(MathChallengeExitReason.Quit);
+    }
+
+    private void Complete(MathChallengeExitReason reason)
+    {
         HideImmediate();
-        Action callback = completedCallback;
+        Action<MathChallengeExitReason> callback = completedCallback;
         completedCallback = null;
-        callback?.Invoke();
+        callback?.Invoke(reason);
     }
 
     private void HideImmediate()
@@ -194,39 +227,25 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
     }
 
-    private void ApplyCurrentAnswerToInput()
+    private void RefreshAnswerText()
     {
-        if (answerInput == null)
+        if (answerPlaceholderText == null && answerValueText == null)
         {
             return;
         }
 
-        answerInput.SetTextWithoutNotify(currentAnswer);
-        answerInput.caretPosition = answerInput.text.Length;
-        FocusAnswerInput();
-    }
-
-    private void FocusAnswerInput()
-    {
-        if (answerInput == null)
+        bool hasAnswer = !string.IsNullOrEmpty(currentAnswer);
+        if (answerPlaceholderText != null)
         {
-            return;
+            answerPlaceholderText.gameObject.SetActive(!hasAnswer);
+            answerPlaceholderText.text = AnswerPlaceholder;
+            answerPlaceholderText.color = placeholderColor;
         }
 
-        answerInput.Select();
-        answerInput.ActivateInputField();
-        StartCoroutine(FocusAnswerInputNextFrame());
-    }
-
-    private IEnumerator FocusAnswerInputNextFrame()
-    {
-        yield return null;
-
-        if (IsOpen && answerInput != null)
+        if (answerValueText != null)
         {
-            answerInput.Select();
-            answerInput.ActivateInputField();
-            answerInput.caretPosition = answerInput.text.Length;
+            answerValueText.gameObject.SetActive(hasAnswer);
+            answerValueText.text = hasAnswer ? currentAnswer : string.Empty;
         }
     }
 
@@ -239,73 +258,138 @@ public sealed class MathChallengePopup : MonoBehaviour
 
         if (submitButton == null)
         {
-            Transform submitTransform = FindDeepChild(transform, SubmitButtonName);
-            if (submitTransform != null)
-            {
-                submitButton = submitTransform.GetComponent<Button>();
-            }
+            submitButton = FindDeepChild(transform, SubmitButtonName)?.GetComponent<Button>();
         }
 
-        if (answerInput == null)
+        if (quitButton == null)
         {
-            answerInput = GetComponentInChildren<TMP_InputField>(true);
+            quitButton = FindDeepChild(transform, QuitButtonName)?.GetComponent<Button>();
         }
 
         Transform panelText = FindDeepChild(transform, PanelTextName);
-        if (panelText != null)
+        if (panelText != null && questionText == null)
         {
-            if (questionText == null)
-            {
-                TMP_Text[] texts = panelText.GetComponentsInChildren<TMP_Text>(true);
-                if (texts.Length > 0)
-                {
-                    questionText = texts[0];
-                }
-            }
-
-            EnsurePanelTextContent(panelText);
+            questionText = FindQuestionText(panelText);
         }
 
-        ConfigureAnswerInput();
-    }
-
-    private void EnsurePanelTextContent(Transform panelText)
-    {
-        if (questionText == null)
+        if (questionText == null && panelText != null)
         {
             questionText = CreateQuestionText(panelText);
         }
 
-        if (answerInput == null)
+        if (answerPlaceholderText == null)
         {
-            answerInput = FindAnswerInput(panelText);
+            answerPlaceholderText = FindAnswerPlaceholderText(transform);
         }
 
-        if (answerInput == null && createMissingInputAtRuntime)
+        if (answerValueText == null)
         {
-            answerInput = CreateAnswerInput(panelText, questionText);
+            answerValueText = FindOrCreateAnswerValueText(transform, answerPlaceholderText);
         }
     }
 
-    private void ConfigureAnswerInput()
+    public static TMP_Text CreateQuestionText(Transform parent)
     {
-        if (answerInput == null)
+        TMP_Text existingText = FindQuestionText(parent);
+        return existingText != null ? existingText : CreatePanelText(parent, "Question_Text", new Vector2(0f, 48f), 50f);
+    }
+
+    public static Transform FindPanelText(Transform root)
+    {
+        return FindDeepChild(root, PanelTextName);
+    }
+
+    public static TMP_Text FindQuestionText(Transform panelText)
+    {
+        if (panelText == null)
         {
-            return;
+            return null;
         }
 
-        answerInput.contentType = TMP_InputField.ContentType.IntegerNumber;
-        answerInput.lineType = TMP_InputField.LineType.SingleLine;
-        answerInput.characterLimit = AnswerCharacterLimit;
-        answerInput.keyboardType = TouchScreenKeyboardType.NumberPad;
-        answerInput.customCaretColor = true;
-        answerInput.caretColor = new Color(0.08f, 0.28f, 0.75f, 1f);
-        answerInput.caretWidth = 3;
-        answerInput.selectionColor = new Color(0.62f, 0.82f, 1f, 0.45f);
-        if (answerInput.textComponent != null)
+        TMP_Text namedText = FindDeepChild(panelText, "Question_Text")?.GetComponent<TMP_Text>();
+        if (namedText != null)
         {
-            answerInput.textComponent.alignment = TextAlignmentOptions.Center;
+            return namedText;
         }
+
+        TMP_Text[] texts = panelText.GetComponentsInChildren<TMP_Text>(true);
+        return texts.Length > 0 ? texts[0] : null;
+    }
+
+    public static TMP_Text FindAnswerPlaceholderText(Transform root)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        TMP_Text namedText = FindDeepChild(root, AnswerPlaceholderTextName)?.GetComponent<TMP_Text>();
+        if (namedText != null)
+        {
+            return namedText;
+        }
+
+        Transform answerDisplay = FindDeepChild(root, AnswerDisplayName);
+        return answerDisplay != null ? answerDisplay.GetComponentInChildren<TMP_Text>(true) : null;
+    }
+
+    public static TMP_Text FindOrCreateAnswerValueText(Transform root, TMP_Text styleSource)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        TMP_Text existingText = FindDeepChild(root, AnswerValueTextName)?.GetComponent<TMP_Text>();
+        if (existingText != null)
+        {
+            return existingText;
+        }
+
+        Transform answerDisplay = FindDeepChild(root, AnswerDisplayName);
+        if (answerDisplay == null)
+        {
+            return null;
+        }
+
+        GameObject answerObject = new GameObject(AnswerValueTextName, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        answerObject.transform.SetParent(answerDisplay, false);
+        TMP_Text answerText = answerObject.GetComponent<TMP_Text>();
+        ConfigureAnswerValueText(answerText, styleSource);
+        answerText.gameObject.SetActive(false);
+        return answerText;
+    }
+
+    private static void ConfigureAnswerValueText(TMP_Text answerText, TMP_Text styleSource)
+    {
+        RectTransform rectTransform = answerText.rectTransform;
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.anchoredPosition = styleSource != null
+            ? styleSource.rectTransform.anchoredPosition
+            : new Vector2(-51f, 0f);
+        rectTransform.sizeDelta = styleSource != null
+            ? styleSource.rectTransform.sizeDelta
+            : new Vector2(200f, 50f);
+
+        if (styleSource != null)
+        {
+            answerText.font = styleSource.font;
+            answerText.fontSharedMaterial = styleSource.fontSharedMaterial;
+            answerText.fontSize = styleSource.fontSize;
+            answerText.fontStyle = styleSource.fontStyle;
+            answerText.alignment = styleSource.alignment;
+            answerText.enableAutoSizing = styleSource.enableAutoSizing;
+        }
+        else
+        {
+            answerText.fontSize = 24f;
+            answerText.alignment = TextAlignmentOptions.Center;
+        }
+
+        answerText.text = string.Empty;
+        answerText.raycastTarget = false;
     }
 
     private static TMP_Text CreatePanelText(Transform parent, string name, Vector2 anchoredPosition, float fontSize)
@@ -328,192 +412,6 @@ public sealed class MathChallengePopup : MonoBehaviour
         return text;
     }
 
-    public static TMP_InputField CreateAnswerInput(Transform parent, TMP_Text styleSource)
-    {
-        TMP_InputField existingInput = FindAnswerInput(parent);
-        if (existingInput != null)
-        {
-            return existingInput;
-        }
-
-        GameObject inputObject = new GameObject("Answer_Input", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image), typeof(TMP_InputField));
-        inputObject.transform.SetParent(parent, false);
-
-        RectTransform inputRect = inputObject.GetComponent<RectTransform>();
-        inputRect.anchorMin = new Vector2(0.5f, 0.5f);
-        inputRect.anchorMax = new Vector2(0.5f, 0.5f);
-        inputRect.pivot = new Vector2(0.5f, 0.5f);
-        inputRect.anchoredPosition = new Vector2(0f, -58f);
-        inputRect.sizeDelta = new Vector2(300f, 76f);
-
-        Image background = inputObject.GetComponent<Image>();
-        background.color = new Color(1f, 1f, 1f, 0.05f);
-
-        GameObject textAreaObject = new GameObject("Text Area", typeof(RectTransform), typeof(RectMask2D));
-        textAreaObject.transform.SetParent(inputObject.transform, false);
-        RectTransform textAreaRect = textAreaObject.GetComponent<RectTransform>();
-        textAreaRect.anchorMin = Vector2.zero;
-        textAreaRect.anchorMax = Vector2.one;
-        textAreaRect.pivot = new Vector2(0.5f, 0.5f);
-        textAreaRect.anchoredPosition = Vector2.zero;
-        textAreaRect.sizeDelta = new Vector2(-24f, -12f);
-
-        GameObject underlineObject = new GameObject("Underline", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        underlineObject.transform.SetParent(inputObject.transform, false);
-        RectTransform underlineRect = underlineObject.GetComponent<RectTransform>();
-        underlineRect.anchorMin = new Vector2(0f, 0f);
-        underlineRect.anchorMax = new Vector2(1f, 0f);
-        underlineRect.pivot = new Vector2(0.5f, 0f);
-        underlineRect.anchoredPosition = Vector2.zero;
-        underlineRect.sizeDelta = new Vector2(0f, 4f);
-
-        Image underline = underlineObject.GetComponent<Image>();
-        underline.color = new Color(0.08f, 0.28f, 0.75f, 0.75f);
-        underline.raycastTarget = false;
-
-        TMP_Text placeholder = CreateInputText(textAreaObject.transform, "Placeholder", styleSource, 34f);
-        placeholder.text = "Tap to answer";
-        placeholder.color = new Color(0.16f, 0.16f, 0.16f, 0.42f);
-
-        TMP_Text inputText = CreateInputText(textAreaObject.transform, "Text", styleSource, 38f);
-        inputText.text = string.Empty;
-        inputText.color = new Color(0.16f, 0.16f, 0.16f, 1f);
-
-        TMP_InputField inputField = inputObject.GetComponent<TMP_InputField>();
-        inputField.targetGraphic = background;
-        inputField.textViewport = textAreaRect;
-        inputField.textComponent = inputText;
-        inputField.placeholder = placeholder;
-        inputField.contentType = TMP_InputField.ContentType.IntegerNumber;
-        inputField.lineType = TMP_InputField.LineType.SingleLine;
-        inputField.characterLimit = AnswerCharacterLimit;
-        inputField.keyboardType = TouchScreenKeyboardType.NumberPad;
-        inputField.customCaretColor = true;
-        inputField.caretColor = new Color(0.08f, 0.28f, 0.75f, 1f);
-        inputField.caretWidth = 3;
-        inputField.selectionColor = new Color(0.62f, 0.82f, 1f, 0.45f);
-        return inputField;
-    }
-
-    public static void ApplyDefaultInputHintStyle(TMP_InputField inputField)
-    {
-        if (inputField == null)
-        {
-            return;
-        }
-
-        if (inputField.targetGraphic is Image background)
-        {
-            background.color = new Color(1f, 1f, 1f, 0.05f);
-        }
-
-        inputField.customCaretColor = true;
-        inputField.caretColor = new Color(0.08f, 0.28f, 0.75f, 1f);
-        inputField.caretWidth = 3;
-        inputField.selectionColor = new Color(0.62f, 0.82f, 1f, 0.45f);
-
-        if (inputField.placeholder is TMP_Text placeholder)
-        {
-            placeholder.text = "Tap to answer";
-            placeholder.color = new Color(0.16f, 0.16f, 0.16f, 0.42f);
-        }
-
-        EnsureUnderline(inputField.transform);
-    }
-
-    private static void EnsureUnderline(Transform inputTransform)
-    {
-        Transform existingUnderline = inputTransform.Find("Underline");
-        if (existingUnderline != null)
-        {
-            return;
-        }
-
-        GameObject underlineObject = new GameObject("Underline", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
-        underlineObject.transform.SetParent(inputTransform, false);
-        RectTransform underlineRect = underlineObject.GetComponent<RectTransform>();
-        underlineRect.anchorMin = new Vector2(0f, 0f);
-        underlineRect.anchorMax = new Vector2(1f, 0f);
-        underlineRect.pivot = new Vector2(0.5f, 0f);
-        underlineRect.anchoredPosition = Vector2.zero;
-        underlineRect.sizeDelta = new Vector2(0f, 4f);
-
-        Image underline = underlineObject.GetComponent<Image>();
-        underline.color = new Color(0.08f, 0.28f, 0.75f, 0.75f);
-        underline.raycastTarget = false;
-    }
-
-    public static TMP_Text CreateQuestionText(Transform parent)
-    {
-        TMP_Text existingText = FindQuestionText(parent);
-        return existingText != null ? existingText : CreatePanelText(parent, "Question_Text", new Vector2(0f, 48f), 50f);
-    }
-
-    public static Transform FindPanelText(Transform root)
-    {
-        return FindDeepChild(root, PanelTextName);
-    }
-
-    public static TMP_InputField FindAnswerInput(Transform parent)
-    {
-        if (parent == null)
-        {
-            return null;
-        }
-
-        Transform existingInput = FindDeepChild(parent, "Answer_Input");
-        if (existingInput != null && existingInput.TryGetComponent(out TMP_InputField inputField))
-        {
-            return inputField;
-        }
-
-        return parent.GetComponentInChildren<TMP_InputField>(true);
-    }
-
-    public static TMP_Text FindQuestionText(Transform panelText)
-    {
-        if (panelText == null)
-        {
-            return null;
-        }
-
-        TMP_Text[] texts = panelText.GetComponentsInChildren<TMP_Text>(true);
-        foreach (TMP_Text text in texts)
-        {
-            if (text.GetComponentInParent<TMP_InputField>(true) == null)
-            {
-                return text;
-            }
-        }
-
-        return null;
-    }
-
-    private static TMP_Text CreateInputText(Transform parent, string name, TMP_Text styleSource, float fontSize)
-    {
-        GameObject textObject = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
-        textObject.transform.SetParent(parent, false);
-
-        RectTransform rectTransform = textObject.GetComponent<RectTransform>();
-        rectTransform.anchorMin = Vector2.zero;
-        rectTransform.anchorMax = Vector2.one;
-        rectTransform.pivot = new Vector2(0.5f, 0.5f);
-        rectTransform.anchoredPosition = Vector2.zero;
-        rectTransform.sizeDelta = Vector2.zero;
-
-        TMP_Text text = textObject.GetComponent<TMP_Text>();
-        if (styleSource != null)
-        {
-            text.font = styleSource.font;
-            text.fontSharedMaterial = styleSource.fontSharedMaterial;
-        }
-
-        text.alignment = TextAlignmentOptions.Center;
-        text.fontSize = fontSize;
-        text.raycastTarget = false;
-        return text;
-    }
-
     private void BindButtons()
     {
         if (submitButton != null)
@@ -521,10 +419,9 @@ public sealed class MathChallengePopup : MonoBehaviour
             submitButton.onClick.AddListener(SubmitAnswer);
         }
 
-        if (answerInput != null)
+        if (quitButton != null)
         {
-            answerInput.onValueChanged.AddListener(SetAnswerText);
-            answerInput.onSubmit.AddListener(_ => SubmitAnswer());
+            quitButton.onClick.AddListener(QuitChallenge);
         }
 
         Transform answerPad = FindDeepChild(transform, AnswerPadName);
@@ -535,6 +432,11 @@ public sealed class MathChallengePopup : MonoBehaviour
 
         foreach (Button button in answerPad.GetComponentsInChildren<Button>(true))
         {
+            if (button == submitButton || button == quitButton)
+            {
+                continue;
+            }
+
             TMP_Text text = button.GetComponentInChildren<TMP_Text>(true);
             if (text == null)
             {
@@ -558,6 +460,11 @@ public sealed class MathChallengePopup : MonoBehaviour
 
     private static Transform FindDeepChild(Transform parent, string childName)
     {
+        if (parent == null)
+        {
+            return null;
+        }
+
         for (int index = 0; index < parent.childCount; index++)
         {
             Transform child = parent.GetChild(index);

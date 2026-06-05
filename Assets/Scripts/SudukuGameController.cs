@@ -5,6 +5,14 @@ using UnityEngine;
 using UnityEngine.UI;
 using Spine.Unity;
 
+public enum MathChallengeQuitPenalty
+{
+    None,
+    LockInput,
+    ShowAd,
+    ShowAdThenLock
+}
+
 [DisallowMultipleComponent]
 [AddComponentMenu("UI/Suduku Game Controller")]
 public sealed class SudukuGameController : MonoBehaviour
@@ -33,6 +41,8 @@ public sealed class SudukuGameController : MonoBehaviour
     [SerializeField] private GameObject mathChallengePrefab;
     [SerializeField] private Transform mathChallengeParent;
     [SerializeField, Min(1)] private int wrongPlacementsBeforeMathChallenge = 2;
+    [SerializeField] private MathChallengeQuitPenalty quitPenalty = MathChallengeQuitPenalty.LockInput;
+    [SerializeField, Min(0f)] private float quitLockSeconds = 10f;
 
     [Header("Cell Highlight Colors")]
     [SerializeField] private Color normalCellColor = Color.white;
@@ -49,6 +59,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private readonly bool[] completedBoxes = new bool[BoardLength];
 
     private SudukuCell selectedCell;
+    private SudukuCell pendingMathChallengeCell;
     private int selectedNumber;
     private int consecutiveWrongPlacements;
     private bool isMathChallengeActive;
@@ -105,6 +116,8 @@ public sealed class SudukuGameController : MonoBehaviour
         selectedNumber = EmptyValue;
         consecutiveWrongPlacements = 0;
         isMathChallengeActive = false;
+        pendingMathChallengeCell = null;
+        ClearPenaltyLocks();
         SetNoteMode(false);
         SelectCell(null);
     }
@@ -118,6 +131,13 @@ public sealed class SudukuGameController : MonoBehaviour
 
         value = Mathf.Clamp(value, EmptyValue, BoardLength);
         selectedNumber = value;
+
+        if (selectedCell != null && selectedCell.IsPenaltyLocked)
+        {
+            selectedCell.PlayPenaltyLockWiggle();
+            RefreshBoardState();
+            return;
+        }
 
         if (isNoteMode)
         {
@@ -149,7 +169,7 @@ public sealed class SudukuGameController : MonoBehaviour
         selectedCell.SetValue(value, false, isWrongPlacement);
         RefreshBoardState();
 
-        UpdateWrongPlacementStreak(value, isWrongPlacement);
+        UpdateWrongPlacementStreak(value, isWrongPlacement, changedCell);
         if (isMathChallengeActive)
         {
             return;
@@ -173,6 +193,12 @@ public sealed class SudukuGameController : MonoBehaviour
                 continue;
             }
 
+            if (move.Cell.IsPenaltyLocked)
+            {
+                move.Cell.PlayPenaltyLockWiggle();
+                continue;
+            }
+
             move.Cell.SetValue(move.PreviousValue, false, IsWrongValue(move.Cell, move.PreviousValue));
             RefreshCompletedUnitCache();
             SelectCell(move.Cell);
@@ -182,6 +208,11 @@ public sealed class SudukuGameController : MonoBehaviour
 
     public void ToggleNoteMode()
     {
+        if (isMathChallengeActive)
+        {
+            return;
+        }
+
         SetNoteMode(!isNoteMode);
     }
 
@@ -241,7 +272,7 @@ public sealed class SudukuGameController : MonoBehaviour
         return null;
     }
 
-    private void UpdateWrongPlacementStreak(int value, bool isWrongPlacement)
+    private void UpdateWrongPlacementStreak(int value, bool isWrongPlacement, SudukuCell changedCell)
     {
         if (value == EmptyValue)
         {
@@ -260,6 +291,7 @@ public sealed class SudukuGameController : MonoBehaviour
             return;
         }
 
+        pendingMathChallengeCell = changedCell;
         OpenMathChallenge();
     }
 
@@ -279,13 +311,52 @@ public sealed class SudukuGameController : MonoBehaviour
 
         isMathChallengeActive = true;
         consecutiveWrongPlacements = 0;
-        mathChallengePopup.Show(ResumeAfterMathChallenge);
+        mathChallengePopup.Show(HandleMathChallengeClosed);
     }
 
-    private void ResumeAfterMathChallenge()
+    private void HandleMathChallengeClosed(MathChallengeExitReason reason)
     {
         isMathChallengeActive = false;
         RefreshBoardState();
+
+        if (reason == MathChallengeExitReason.Quit)
+        {
+            ApplyMathChallengeQuitPenalty();
+        }
+
+        pendingMathChallengeCell = null;
+    }
+
+    private void ApplyMathChallengeQuitPenalty()
+    {
+        switch (quitPenalty)
+        {
+            case MathChallengeQuitPenalty.LockInput:
+                StartPenaltyCellLock(quitLockSeconds);
+                break;
+            case MathChallengeQuitPenalty.ShowAd:
+                RequestMathChallengeQuitAd();
+                break;
+            case MathChallengeQuitPenalty.ShowAdThenLock:
+                RequestMathChallengeQuitAd();
+                StartPenaltyCellLock(quitLockSeconds);
+                break;
+        }
+    }
+
+    private void RequestMathChallengeQuitAd()
+    {
+        Debug.Log("Math challenge quit requested an ad. Connect this to the ad service when it is ready.", this);
+    }
+
+    private void StartPenaltyCellLock(float seconds)
+    {
+        if (seconds <= 0f || pendingMathChallengeCell == null)
+        {
+            return;
+        }
+
+        pendingMathChallengeCell.StartPenaltyLock(seconds);
     }
 
     private void InputNote(int value)
@@ -296,8 +367,13 @@ public sealed class SudukuGameController : MonoBehaviour
             return;
         }
 
-        if (selectedCell == null || selectedCell.IsFixed || selectedCell.Value != EmptyValue)
+        if (selectedCell == null || selectedCell.IsFixed || selectedCell.IsPenaltyLocked || selectedCell.Value != EmptyValue)
         {
+            if (selectedCell != null && selectedCell.IsPenaltyLocked)
+            {
+                selectedCell.PlayPenaltyLockWiggle();
+            }
+
             RefreshBoardState();
             return;
         }
@@ -388,6 +464,7 @@ public sealed class SudukuGameController : MonoBehaviour
                 continue;
             }
 
+            cell.ConfigurePenaltyLock(boardLayout != null ? boardLayout.LockSkeletonDataAsset : null);
             cell.Initialize(row, column);
             cells[row, column] = cell;
         }
@@ -455,9 +532,31 @@ public sealed class SudukuGameController : MonoBehaviour
 
     private void SelectCell(SudukuCell cell)
     {
+        if (isMathChallengeActive && cell != null)
+        {
+            return;
+        }
+
+        if (cell != null && cell.IsPenaltyLocked)
+        {
+            cell.PlayPenaltyLockWiggle();
+            return;
+        }
+
         selectedCell = cell;
         selectedNumber = selectedCell != null ? selectedCell.Value : EmptyValue;
         RefreshBoardState();
+    }
+
+    private void ClearPenaltyLocks()
+    {
+        foreach (SudukuCell cell in cells)
+        {
+            if (cell != null)
+            {
+                cell.ClearPenaltyLock();
+            }
+        }
     }
 
     private void RefreshBoardState()

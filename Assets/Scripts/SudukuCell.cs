@@ -1,4 +1,6 @@
+using System.Collections;
 using TMPro;
+using Spine.Unity;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -8,32 +10,50 @@ public sealed class SudukuCell : MonoBehaviour
 {
     private const string ShineSweepAnimationName = "Cell_ShineSweep";
     private const int NoteCount = 9;
+    private const string PenaltyLockRootName = "CellLock";
+    private const string PenaltyLockSkeletonName = "SpineLock";
+    private const string PenaltyLockCountdownName = "LockCountdown";
 
     [SerializeField] private TMP_Text valueText;
     [SerializeField] private TMP_Text okValueText;
     [SerializeField] private RectTransform notesRoot;
     [SerializeField] private TMP_Text[] noteTexts = new TMP_Text[NoteCount];
     [SerializeField] private Image background;
+    [SerializeField] private SkeletonDataAsset penaltyLockSkeletonData;
+    [SerializeField] private RectTransform penaltyLockRoot;
+    [SerializeField] private SkeletonGraphic penaltyLockSkeleton;
+    [SerializeField] private TMP_Text penaltyLockCountdownText;
     [SerializeField] private Color normalColor = Color.white;
     [SerializeField] private Color selectedColor = new Color(0.83f, 0.91f, 1f, 1f);
     [SerializeField] private Color fixedNumberColor = new Color(0.16f, 0.16f, 0.16f, 1f);
     [SerializeField] private Color editableNumberColor = new Color(0.08f, 0.28f, 0.75f, 1f);
     [SerializeField] private Color okNumberColor = Color.white;
     [SerializeField] private Color noteNumberColor = new Color(0.28f, 0.36f, 0.48f, 1f);
+    [SerializeField] private Color lockCountdownColor = new Color(0.16f, 0.16f, 0.16f, 1f);
+    [SerializeField] private Vector2 lockSkeletonInset = new Vector2(8f, 8f);
+    [SerializeField] private string lockCloseAnimation = "close";
+    [SerializeField] private string lockWiggleAnimation = "wiggle";
+    [SerializeField] private string lockOpenAnimation = "open";
 
     public int Row { get; private set; }
     public int Column { get; private set; }
     public int Value { get; private set; }
     public bool IsFixed { get; private set; }
     public bool IsWrong { get; private set; }
+    public bool IsPenaltyLocked { get; private set; }
 
     private readonly bool[] notes = new bool[NoteCount + 1];
+    private Coroutine penaltyLockRoutine;
+    private bool createdPenaltyLockSkeleton;
+    private bool createdPenaltyLockCountdown;
+    private bool hideNumberForPenaltyLock;
 
     private void Awake()
     {
         CacheTextReferences();
         ConfigureNotesLayout();
         ConfigureFeedbackLayout();
+        ConfigurePenaltyLockLayout();
         ConfigureRaycastTargets();
     }
 
@@ -44,10 +64,22 @@ public sealed class SudukuCell : MonoBehaviour
         CacheTextReferences();
         ConfigureNotesLayout();
         ConfigureFeedbackLayout();
+        ConfigurePenaltyLockLayout();
         ConfigureRaycastTargets();
+        ClearPenaltyLock();
         SetValue(0, false);
         ClearNotes();
         SetSelected(false);
+    }
+
+    public void ConfigurePenaltyLock(SkeletonDataAsset skeletonDataAsset)
+    {
+        if (skeletonDataAsset != null)
+        {
+            penaltyLockSkeletonData = skeletonDataAsset;
+        }
+
+        ConfigurePenaltyLockLayout();
     }
 
     public void SetValue(int value, bool isFixed)
@@ -81,6 +113,7 @@ public sealed class SudukuCell : MonoBehaviour
         }
 
         RefreshNumberColor();
+        RefreshPenaltyLockNumberVisibility();
     }
 
     public void ToggleNote(int value)
@@ -148,6 +181,92 @@ public sealed class SudukuCell : MonoBehaviour
         animation.Play(ShineSweepAnimationName);
     }
 
+    public void StartPenaltyLock(float seconds)
+    {
+        if (seconds <= 0f)
+        {
+            return;
+        }
+
+        ConfigurePenaltyLockLayout();
+        IsPenaltyLocked = true;
+        hideNumberForPenaltyLock = true;
+        RefreshPenaltyLockNumberVisibility();
+
+        if (penaltyLockRoot != null)
+        {
+            penaltyLockRoot.gameObject.SetActive(true);
+            penaltyLockRoot.SetAsLastSibling();
+        }
+
+        PlayLockAnimation(lockCloseAnimation, false);
+
+        if (penaltyLockRoutine != null)
+        {
+            StopCoroutine(penaltyLockRoutine);
+        }
+
+        penaltyLockRoutine = StartCoroutine(PenaltyLockCountdownRoutine(seconds));
+    }
+
+    public void PlayPenaltyLockWiggle()
+    {
+        if (!IsPenaltyLocked)
+        {
+            return;
+        }
+
+        ConfigurePenaltyLockLayout();
+        PlayLockAnimation(lockWiggleAnimation, false);
+    }
+
+    public void ClearPenaltyLock()
+    {
+        if (penaltyLockRoutine != null)
+        {
+            StopCoroutine(penaltyLockRoutine);
+            penaltyLockRoutine = null;
+        }
+
+        IsPenaltyLocked = false;
+        hideNumberForPenaltyLock = false;
+        RefreshPenaltyLockNumberVisibility();
+        if (penaltyLockCountdownText != null)
+        {
+            penaltyLockCountdownText.text = string.Empty;
+        }
+
+        if (penaltyLockRoot != null)
+        {
+            penaltyLockRoot.gameObject.SetActive(false);
+        }
+    }
+
+    private IEnumerator PenaltyLockCountdownRoutine(float seconds)
+    {
+        float remaining = seconds;
+        while (remaining > 0f)
+        {
+            SetPenaltyLockCountdown(remaining);
+            yield return null;
+            remaining -= Time.deltaTime;
+        }
+
+        SetPenaltyLockCountdown(0f);
+        IsPenaltyLocked = false;
+        PlayLockAnimation(lockOpenAnimation, false);
+        yield return new WaitForSeconds(0.35f);
+        hideNumberForPenaltyLock = false;
+        RefreshPenaltyLockNumberVisibility();
+
+        if (!IsPenaltyLocked && penaltyLockRoot != null)
+        {
+            penaltyLockRoot.gameObject.SetActive(false);
+        }
+
+        penaltyLockRoutine = null;
+    }
+
     private void RefreshNumberColor()
     {
         RefreshNumberColor(new Color(0.85f, 0.12f, 0.12f, 1f));
@@ -170,6 +289,33 @@ public sealed class SudukuCell : MonoBehaviour
         {
             valueText.color = IsFixed ? fixedNumberColor : editableNumberColor;
         }
+
+        RefreshPenaltyLockNumberVisibility();
+    }
+
+    private void RefreshPenaltyLockNumberVisibility()
+    {
+        bool visible = !hideNumberForPenaltyLock;
+        if (valueText != null)
+        {
+            valueText.enabled = visible;
+        }
+
+        if (okValueText != null)
+        {
+            okValueText.enabled = visible;
+        }
+    }
+
+    private void SetPenaltyLockCountdown(float remainingSeconds)
+    {
+        if (penaltyLockCountdownText == null)
+        {
+            return;
+        }
+
+        int seconds = Mathf.Max(0, Mathf.CeilToInt(remainingSeconds));
+        penaltyLockCountdownText.text = seconds > 0 ? seconds.ToString() : string.Empty;
     }
 
     private void CacheTextReferences()
@@ -376,6 +522,152 @@ public sealed class SudukuCell : MonoBehaviour
         }
 
         AlignOkValueText();
+    }
+
+    private void ConfigurePenaltyLockLayout()
+    {
+        if (penaltyLockRoot == null)
+        {
+            penaltyLockRoot = transform.Find(PenaltyLockRootName) as RectTransform;
+        }
+
+        if (penaltyLockRoot == null)
+        {
+            GameObject lockObject = new GameObject(PenaltyLockRootName, typeof(RectTransform), typeof(CanvasGroup));
+            lockObject.transform.SetParent(transform, false);
+            penaltyLockRoot = lockObject.GetComponent<RectTransform>();
+            StretchToParent(penaltyLockRoot);
+        }
+
+        penaltyLockRoot.SetAsLastSibling();
+
+        CanvasGroup lockGroup = penaltyLockRoot.GetComponent<CanvasGroup>();
+        if (lockGroup != null)
+        {
+            lockGroup.interactable = false;
+            lockGroup.blocksRaycasts = false;
+        }
+
+        ConfigurePenaltyLockSkeleton();
+        ConfigurePenaltyLockCountdown();
+
+        if (!IsPenaltyLocked)
+        {
+            penaltyLockRoot.gameObject.SetActive(false);
+        }
+    }
+
+    private void ConfigurePenaltyLockSkeleton()
+    {
+        if (penaltyLockSkeleton == null)
+        {
+            Transform existingSkeleton = penaltyLockRoot.Find(PenaltyLockSkeletonName);
+            if (existingSkeleton != null)
+            {
+                penaltyLockSkeleton = existingSkeleton.GetComponent<SkeletonGraphic>();
+            }
+        }
+
+        if (penaltyLockSkeleton == null)
+        {
+            GameObject skeletonObject = new GameObject(PenaltyLockSkeletonName, typeof(RectTransform), typeof(CanvasRenderer), typeof(SkeletonGraphic));
+            skeletonObject.transform.SetParent(penaltyLockRoot, false);
+            penaltyLockSkeleton = skeletonObject.GetComponent<SkeletonGraphic>();
+            createdPenaltyLockSkeleton = true;
+        }
+
+        if (createdPenaltyLockSkeleton)
+        {
+            RectTransform skeletonRect = penaltyLockSkeleton.rectTransform;
+            StretchToParent(skeletonRect);
+            skeletonRect.sizeDelta = -lockSkeletonInset;
+        }
+
+        penaltyLockSkeleton.raycastTarget = false;
+        penaltyLockSkeleton.initialSkinName = "default";
+        penaltyLockSkeleton.startingAnimation = lockCloseAnimation;
+        penaltyLockSkeleton.startingLoop = false;
+        if (penaltyLockSkeletonData != null)
+        {
+            if (penaltyLockSkeleton.material == null &&
+                penaltyLockSkeletonData.atlasAssets != null &&
+                penaltyLockSkeletonData.atlasAssets.Length > 0 &&
+                penaltyLockSkeletonData.atlasAssets[0] != null)
+            {
+                penaltyLockSkeleton.material = penaltyLockSkeletonData.atlasAssets[0].PrimaryMaterial;
+            }
+
+            if (penaltyLockSkeleton.SkeletonDataAsset != penaltyLockSkeletonData)
+            {
+                penaltyLockSkeleton.skeletonDataAsset = penaltyLockSkeletonData;
+                penaltyLockSkeleton.Initialize(true);
+            }
+        }
+    }
+
+    private void ConfigurePenaltyLockCountdown()
+    {
+        if (penaltyLockCountdownText == null)
+        {
+            Transform existingCountdown = penaltyLockRoot.Find(PenaltyLockCountdownName);
+            if (existingCountdown != null)
+            {
+                penaltyLockCountdownText = existingCountdown.GetComponent<TMP_Text>();
+            }
+        }
+
+        if (penaltyLockCountdownText == null)
+        {
+            GameObject countdownObject = new GameObject(PenaltyLockCountdownName, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+            countdownObject.transform.SetParent(penaltyLockRoot, false);
+            penaltyLockCountdownText = countdownObject.GetComponent<TMP_Text>();
+            createdPenaltyLockCountdown = true;
+        }
+
+        RectTransform countdownRect = penaltyLockCountdownText.rectTransform;
+        countdownRect.SetAsLastSibling();
+
+        if (createdPenaltyLockCountdown)
+        {
+            countdownRect.anchorMin = new Vector2(0.5f, 0.5f);
+            countdownRect.anchorMax = new Vector2(0.5f, 0.5f);
+            countdownRect.pivot = new Vector2(0.5f, 0.5f);
+            countdownRect.anchoredPosition = new Vector2(0f, -18f);
+            countdownRect.sizeDelta = new Vector2(64f, 30f);
+            penaltyLockCountdownText.alignment = TextAlignmentOptions.Center;
+            penaltyLockCountdownText.enableAutoSizing = true;
+            penaltyLockCountdownText.fontSizeMin = 10f;
+            penaltyLockCountdownText.fontSizeMax = 24f;
+            penaltyLockCountdownText.color = lockCountdownColor;
+            if (valueText != null)
+            {
+                penaltyLockCountdownText.font = valueText.font;
+                penaltyLockCountdownText.fontSharedMaterial = valueText.fontSharedMaterial;
+            }
+        }
+
+        penaltyLockCountdownText.raycastTarget = false;
+    }
+
+    private void PlayLockAnimation(string animationName, bool loop)
+    {
+        if (penaltyLockSkeleton == null || string.IsNullOrEmpty(animationName))
+        {
+            return;
+        }
+
+        if (penaltyLockSkeleton.SkeletonDataAsset == null && penaltyLockSkeletonData != null)
+        {
+            penaltyLockSkeleton.skeletonDataAsset = penaltyLockSkeletonData;
+        }
+
+        penaltyLockSkeleton.Initialize(false);
+        if (penaltyLockSkeleton.AnimationState?.Data?.SkeletonData?.FindAnimation(animationName) == null)
+        {
+            return;
+        }
+
+        penaltyLockSkeleton.AnimationState.SetAnimation(0, animationName, loop);
     }
 
     private static void StretchToParent(RectTransform rectTransform)

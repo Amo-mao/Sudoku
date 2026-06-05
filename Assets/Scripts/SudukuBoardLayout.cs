@@ -1,3 +1,4 @@
+using Spine.Unity;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -25,7 +26,12 @@ public sealed class SudukuBoardLayout : MonoBehaviour
     [SerializeField] private Color outerLineColor = new Color(0.16f, 0.16f, 0.16f, 1f);
     [SerializeField] private Color cellColor = Color.white;
 
+    [Header("Cell Lock")]
+    [SerializeField] private SkeletonDataAsset lockSkeletonDataAsset;
+
     private RectTransform rectTransform;
+
+    public SkeletonDataAsset LockSkeletonDataAsset => lockSkeletonDataAsset;
 
     private void OnEnable()
     {
@@ -145,6 +151,7 @@ public sealed class SudukuBoardLayout : MonoBehaviour
                     sudukuCell = cell.AddComponent<SudukuCell>();
                 }
 
+                sudukuCell.ConfigurePenaltyLock(lockSkeletonDataAsset);
                 sudukuCell.Initialize(row, column);
 
                 Image image = cell.GetComponent<Image>();

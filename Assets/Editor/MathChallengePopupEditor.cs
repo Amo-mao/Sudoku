@@ -5,17 +5,18 @@ using UnityEngine.UI;
 
 public static class MathChallengePopupEditor
 {
-    private const string MenuPath = "Tools/Sudoku/Create Editable Answer Input";
+    private const string MenuPath = "Tools/Sudoku/Bind Math Challenge Popup";
     private const string SubmitButtonName = "Button_Su";
+    private const string QuitButtonName = "Button_Quit";
 
     [MenuItem(MenuPath, true)]
-    private static bool CanCreateEditableAnswerInput()
+    private static bool CanBindMathChallengePopup()
     {
         return Selection.activeGameObject != null;
     }
 
     [MenuItem(MenuPath)]
-    private static void CreateEditableAnswerInput()
+    private static void BindMathChallengePopup()
     {
         GameObject selected = Selection.activeGameObject;
         string prefabPath = AssetDatabase.GetAssetPath(selected);
@@ -34,19 +35,18 @@ public static class MathChallengePopupEditor
             }
 
             AssetDatabase.Refresh();
-            Debug.Log($"Created editable Answer_Input in prefab: {prefabPath}");
+            Debug.Log($"Bound MathChallengePopup references in prefab: {prefabPath}");
             return;
         }
 
         GameObject root = FindObjectMathRoot(selected);
-        Undo.RegisterFullObjectHierarchyUndo(root, "Create Editable Answer Input");
-        TMP_InputField inputField = SetupPopup(root);
-        Selection.activeGameObject = inputField.gameObject;
+        Undo.RegisterFullObjectHierarchyUndo(root, "Bind Math Challenge Popup");
+        SetupPopup(root);
         EditorUtility.SetDirty(root);
-        Debug.Log("Created editable Answer_Input in the selected Object_Math hierarchy.");
+        Debug.Log("Bound MathChallengePopup references in the selected Object_Math hierarchy.");
     }
 
-    private static TMP_InputField SetupPopup(GameObject root)
+    private static void SetupPopup(GameObject root)
     {
         if (root == null)
         {
@@ -71,27 +71,38 @@ public static class MathChallengePopupEditor
             questionText = MathChallengePopup.CreateQuestionText(panelText);
         }
 
-        TMP_InputField inputField = MathChallengePopup.CreateAnswerInput(panelText, questionText);
-        MathChallengePopup.ApplyDefaultInputHintStyle(inputField);
-        Button submitButton = FindDeepChild(root.transform, SubmitButtonName)?.GetComponent<Button>();
+        TMP_Text answerPlaceholderText = MathChallengePopup.FindAnswerPlaceholderText(root.transform);
+        if (answerPlaceholderText == null)
+        {
+            throw new MissingReferenceException("Object_Math needs Answer_Input/TextEnter.");
+        }
 
-        AssignPopupReferences(popup, questionText, inputField, submitButton);
+        TMP_Text answerValueText = MathChallengePopup.FindOrCreateAnswerValueText(root.transform, answerPlaceholderText);
+        Button submitButton = FindDeepChild(root.transform, SubmitButtonName)?.GetComponent<Button>();
+        Button quitButton = FindDeepChild(root.transform, QuitButtonName)?.GetComponent<Button>();
+
+        AssignPopupReferences(popup, questionText, answerPlaceholderText, answerValueText, submitButton, quitButton);
         EditorUtility.SetDirty(popup);
-        EditorUtility.SetDirty(inputField);
-        return inputField;
+        if (answerValueText != null)
+        {
+            EditorUtility.SetDirty(answerValueText);
+        }
     }
 
     private static void AssignPopupReferences(
         MathChallengePopup popup,
         TMP_Text questionText,
-        TMP_InputField inputField,
-        Button submitButton)
+        TMP_Text answerPlaceholderText,
+        TMP_Text answerValueText,
+        Button submitButton,
+        Button quitButton)
     {
         SerializedObject serializedPopup = new SerializedObject(popup);
         serializedPopup.FindProperty("questionText").objectReferenceValue = questionText;
-        serializedPopup.FindProperty("answerInput").objectReferenceValue = inputField;
+        serializedPopup.FindProperty("answerPlaceholderText").objectReferenceValue = answerPlaceholderText;
+        serializedPopup.FindProperty("answerValueText").objectReferenceValue = answerValueText;
         serializedPopup.FindProperty("submitButton").objectReferenceValue = submitButton;
-        serializedPopup.FindProperty("createMissingInputAtRuntime").boolValue = false;
+        serializedPopup.FindProperty("quitButton").objectReferenceValue = quitButton;
         serializedPopup.ApplyModifiedProperties();
     }
 

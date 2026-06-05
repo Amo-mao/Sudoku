@@ -1,0 +1,20 @@
+
+SDK_Lock.png
+size: 221,106
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+Lock_1
+  rotate: true
+  xy: 140, 16
+  size: 88, 79
+  orig: 200, 200
+  offset: 56, 109
+  index: -1
+Lock_2
+  rotate: false
+  xy: 2, 2
+  size: 136, 102
+  orig: 200, 200
+  offset: 32, 13
+  index: -1

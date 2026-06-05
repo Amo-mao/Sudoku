@@ -1179,6 +1179,7 @@ MonoBehaviour:
   thickLineColor: {r: 0.16, g: 0.16, b: 0.16, a: 1}
   outerLineColor: {r: 0.16, g: 0.16, b: 0.16, a: 1}
   cellColor: {r: 1, g: 1, b: 1, a: 1}
+  lockSkeletonDataAsset: {fileID: 11400000, guid: 56999eb14b4134df19ce897d99bf000c, type: 2}
 --- !u!114 &221559184
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1204,6 +1205,8 @@ MonoBehaviour:
   mathChallengePrefab: {fileID: 0}
   mathChallengeParent: {fileID: 0}
   wrongPlacementsBeforeMathChallenge: 2
+  quitPenalty: 1
+  quitLockSeconds: 10
   normalCellColor: {r: 1, g: 1, b: 1, a: 1}
   relatedCellColor: {r: 0.9, g: 0.95, b: 1, a: 1}
   sameNumberCellColor: {r: 1, g: 0.93, b: 0.72, a: 1}
@@ -1511,40 +1514,8 @@ PrefabInstance:
       propertyPath: m_Color.r
       value: 0.9433962
       objectReference: {fileID: 0}
-    - target: {fileID: 6082828430746726192, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_text
-      value: "\u200B"
-      objectReference: {fileID: 0}
-    - target: {fileID: 6082828430746726192, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_fontColor.b
-      value: 0.6132076
-      objectReference: {fileID: 0}
-    - target: {fileID: 6082828430746726192, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_fontColor.g
-      value: 0.2491957
-      objectReference: {fileID: 0}
-    - target: {fileID: 6082828430746726192, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_fontColor.r
-      value: 0.1533019
-      objectReference: {fileID: 0}
-    - target: {fileID: 6082828430746726192, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_fontColor32.rgba
-      value: 4288430119
-      objectReference: {fileID: 0}
-    - target: {fileID: 6082828430746726192, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_TextStyleHashCode
-      value: -1183493901
-      objectReference: {fileID: 0}
     - target: {fileID: 6910250368754958184, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
       propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 8639220079381289661, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_IsActive
-      value: 1
-      objectReference: {fileID: 0}
-    - target: {fileID: 8930221148249285588, guid: 600ea950a08a6e54ea56b3da6abc53d6, type: 3}
-      propertyPath: m_Color.a
       value: 1
       objectReference: {fileID: 0}
     m_RemovedComponents: []
