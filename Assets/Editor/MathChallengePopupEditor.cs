@@ -78,11 +78,17 @@ public static class MathChallengePopupEditor
         }
 
         TMP_Text answerValueText = MathChallengePopup.FindOrCreateAnswerValueText(root.transform, answerPlaceholderText);
+        TMP_InputField answerInputField = MathChallengePopup.FindOrCreateAnswerInputField(root.transform, answerPlaceholderText, answerValueText);
         Button submitButton = FindDeepChild(root.transform, SubmitButtonName)?.GetComponent<Button>();
         Button quitButton = FindDeepChild(root.transform, QuitButtonName)?.GetComponent<Button>();
 
-        AssignPopupReferences(popup, questionText, answerPlaceholderText, answerValueText, submitButton, quitButton);
+        AssignPopupReferences(popup, questionText, answerInputField, answerPlaceholderText, answerValueText, submitButton, quitButton);
         EditorUtility.SetDirty(popup);
+        if (answerInputField != null)
+        {
+            EditorUtility.SetDirty(answerInputField);
+        }
+
         if (answerValueText != null)
         {
             EditorUtility.SetDirty(answerValueText);
@@ -92,6 +98,7 @@ public static class MathChallengePopupEditor
     private static void AssignPopupReferences(
         MathChallengePopup popup,
         TMP_Text questionText,
+        TMP_InputField answerInputField,
         TMP_Text answerPlaceholderText,
         TMP_Text answerValueText,
         Button submitButton,
@@ -99,6 +106,7 @@ public static class MathChallengePopupEditor
     {
         SerializedObject serializedPopup = new SerializedObject(popup);
         serializedPopup.FindProperty("questionText").objectReferenceValue = questionText;
+        serializedPopup.FindProperty("answerInputField").objectReferenceValue = answerInputField;
         serializedPopup.FindProperty("answerPlaceholderText").objectReferenceValue = answerPlaceholderText;
         serializedPopup.FindProperty("answerValueText").objectReferenceValue = answerValueText;
         serializedPopup.FindProperty("submitButton").objectReferenceValue = submitButton;

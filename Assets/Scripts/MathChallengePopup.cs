@@ -25,6 +25,7 @@ public sealed class MathChallengePopup : MonoBehaviour
     private const int AnswerCharacterLimit = 4;
 
     [SerializeField] private TMP_Text questionText;
+    [SerializeField] private TMP_InputField answerInputField;
     [SerializeField] private TMP_Text answerPlaceholderText;
     [SerializeField] private TMP_Text answerValueText;
     [SerializeField] private Button submitButton;
@@ -38,6 +39,7 @@ public sealed class MathChallengePopup : MonoBehaviour
     private string currentAnswer = string.Empty;
     private Action<MathChallengeExitReason> completedCallback;
     private bool initialized;
+    private bool isUpdatingAnswerInput;
 
     public bool IsOpen { get; private set; }
 
@@ -50,6 +52,16 @@ public sealed class MathChallengePopup : MonoBehaviour
     {
         if (!IsOpen)
         {
+            return;
+        }
+
+        if (answerInputField != null && answerInputField.isFocused)
+        {
+            if (Input.GetKeyDown(KeyCode.Escape))
+            {
+                QuitChallenge();
+            }
+
             return;
         }
 
@@ -102,10 +114,12 @@ public sealed class MathChallengePopup : MonoBehaviour
         completedCallback = onCompleted;
         currentAnswer = string.Empty;
         GenerateQuestion();
+        SetAnswerInputTextWithoutNotify(currentAnswer);
         RefreshAnswerText();
 
         gameObject.SetActive(true);
         IsOpen = true;
+        ActivateAnswerInput();
 
         if (animator != null)
         {
@@ -126,10 +140,9 @@ public sealed class MathChallengePopup : MonoBehaviour
 
     public void SetAnswerText(string answer)
     {
-        string trimmedAnswer = answer == null ? string.Empty : answer.Trim();
-        currentAnswer = trimmedAnswer.Length == 0
-            ? string.Empty
-            : trimmedAnswer.Substring(0, Mathf.Min(trimmedAnswer.Length, AnswerCharacterLimit));
+        string sanitizedAnswer = SanitizeAnswer(answer);
+        currentAnswer = sanitizedAnswer;
+        SetAnswerInputTextWithoutNotify(currentAnswer);
         RefreshAnswerText();
     }
 
@@ -141,6 +154,7 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
 
         currentAnswer += digit.ToString();
+        SetAnswerInputTextWithoutNotify(currentAnswer);
         RefreshAnswerText();
     }
 
@@ -152,6 +166,7 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
 
         currentAnswer = currentAnswer.Substring(0, currentAnswer.Length - 1);
+        SetAnswerInputTextWithoutNotify(currentAnswer);
         RefreshAnswerText();
     }
 
@@ -161,7 +176,9 @@ public sealed class MathChallengePopup : MonoBehaviour
         if (!int.TryParse(submittedAnswer, out int value) || value != expectedAnswer)
         {
             currentAnswer = string.Empty;
+            SetAnswerInputTextWithoutNotify(currentAnswer);
             RefreshAnswerText();
+            ActivateAnswerInput();
             return;
         }
 
@@ -241,7 +258,7 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
 
         bool hasAnswer = !string.IsNullOrEmpty(currentAnswer);
-        if (answerPlaceholderText != null)
+        if (answerInputField == null && answerPlaceholderText != null)
         {
             answerPlaceholderText.gameObject.SetActive(!hasAnswer);
             answerPlaceholderText.text = AnswerPlaceholder;
@@ -250,7 +267,7 @@ public sealed class MathChallengePopup : MonoBehaviour
 
         if (answerValueText != null)
         {
-            answerValueText.gameObject.SetActive(hasAnswer);
+            answerValueText.gameObject.SetActive(answerInputField != null || hasAnswer);
             answerValueText.text = hasAnswer ? currentAnswer : string.Empty;
         }
     }
@@ -292,6 +309,13 @@ public sealed class MathChallengePopup : MonoBehaviour
         {
             answerValueText = FindOrCreateAnswerValueText(transform, answerPlaceholderText);
         }
+
+        if (answerInputField == null)
+        {
+            answerInputField = FindOrCreateAnswerInputField(transform, answerPlaceholderText, answerValueText);
+        }
+
+        ConfigureAnswerInputField();
     }
 
     public static TMP_Text CreateQuestionText(Transform parent)
@@ -337,6 +361,39 @@ public sealed class MathChallengePopup : MonoBehaviour
 
         Transform answerDisplay = FindDeepChild(root, AnswerDisplayName);
         return answerDisplay != null ? answerDisplay.GetComponentInChildren<TMP_Text>(true) : null;
+    }
+
+    public static TMP_InputField FindOrCreateAnswerInputField(Transform root, TMP_Text placeholderText, TMP_Text valueText)
+    {
+        if (root == null)
+        {
+            return null;
+        }
+
+        Transform answerDisplay = FindDeepChild(root, AnswerDisplayName);
+        if (answerDisplay == null)
+        {
+            return null;
+        }
+
+        TMP_InputField inputField = answerDisplay.GetComponent<TMP_InputField>();
+        if (inputField == null)
+        {
+            inputField = answerDisplay.gameObject.AddComponent<TMP_InputField>();
+        }
+
+        Image targetImage = answerDisplay.GetComponent<Image>();
+        if (targetImage == null)
+        {
+            targetImage = answerDisplay.gameObject.AddComponent<Image>();
+            targetImage.color = new Color(1f, 1f, 1f, 0f);
+        }
+
+        targetImage.raycastTarget = true;
+        inputField.targetGraphic = targetImage;
+        inputField.placeholder = placeholderText;
+        inputField.textComponent = valueText;
+        return inputField;
     }
 
     public static TMP_Text FindOrCreateAnswerValueText(Transform root, TMP_Text styleSource)
@@ -395,7 +452,108 @@ public sealed class MathChallengePopup : MonoBehaviour
         }
 
         answerText.text = string.Empty;
-        answerText.raycastTarget = false;
+        answerText.raycastTarget = true;
+    }
+
+    private void ConfigureAnswerInputField()
+    {
+        if (answerInputField == null)
+        {
+            return;
+        }
+
+        answerInputField.contentType = TMP_InputField.ContentType.IntegerNumber;
+        answerInputField.keyboardType = TouchScreenKeyboardType.NumberPad;
+        answerInputField.characterLimit = AnswerCharacterLimit;
+        answerInputField.lineType = TMP_InputField.LineType.SingleLine;
+        answerInputField.shouldHideMobileInput = false;
+        answerInputField.onValueChanged.RemoveListener(HandleAnswerInputChanged);
+        answerInputField.onSubmit.RemoveListener(HandleAnswerInputSubmitted);
+        answerInputField.onValueChanged.AddListener(HandleAnswerInputChanged);
+        answerInputField.onSubmit.AddListener(HandleAnswerInputSubmitted);
+
+        if (answerPlaceholderText != null)
+        {
+            answerPlaceholderText.text = AnswerPlaceholder;
+            answerPlaceholderText.color = placeholderColor;
+            answerPlaceholderText.raycastTarget = true;
+        }
+
+        if (answerValueText != null)
+        {
+            answerValueText.gameObject.SetActive(true);
+            answerValueText.raycastTarget = true;
+        }
+
+        SetAnswerInputTextWithoutNotify(currentAnswer);
+    }
+
+    private void HandleAnswerInputChanged(string answer)
+    {
+        if (isUpdatingAnswerInput)
+        {
+            return;
+        }
+
+        string sanitizedAnswer = SanitizeAnswer(answer);
+        currentAnswer = sanitizedAnswer;
+        if (answer != sanitizedAnswer)
+        {
+            SetAnswerInputTextWithoutNotify(sanitizedAnswer);
+        }
+
+        RefreshAnswerText();
+    }
+
+    private void HandleAnswerInputSubmitted(string answer)
+    {
+        SetAnswerText(answer);
+        SubmitAnswer();
+    }
+
+    private void SetAnswerInputTextWithoutNotify(string answer)
+    {
+        if (answerInputField == null)
+        {
+            return;
+        }
+
+        isUpdatingAnswerInput = true;
+        answerInputField.SetTextWithoutNotify(answer ?? string.Empty);
+        answerInputField.ForceLabelUpdate();
+        isUpdatingAnswerInput = false;
+    }
+
+    private void ActivateAnswerInput()
+    {
+        if (answerInputField == null || !isActiveAndEnabled)
+        {
+            return;
+        }
+
+        answerInputField.ActivateInputField();
+    }
+
+    private static string SanitizeAnswer(string answer)
+    {
+        if (string.IsNullOrWhiteSpace(answer))
+        {
+            return string.Empty;
+        }
+
+        char[] digits = new char[Mathf.Min(answer.Length, AnswerCharacterLimit)];
+        int digitCount = 0;
+        for (int index = 0; index < answer.Length && digitCount < AnswerCharacterLimit; index++)
+        {
+            char character = answer[index];
+            if (character >= '0' && character <= '9')
+            {
+                digits[digitCount] = character;
+                digitCount++;
+            }
+        }
+
+        return digitCount == 0 ? string.Empty : new string(digits, 0, digitCount);
     }
 
     private static TMP_Text CreatePanelText(Transform parent, string name, Vector2 anchoredPosition, float fontSize)
