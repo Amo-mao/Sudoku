@@ -1,0 +1,10 @@
+# Math challenge question bank
+# Format: question|answer
+# Keep answers as integers for the current numeric input.
+# Example:
+# 24 x 7 + 36 / 4 = ?|177
+
+3 + 5 = ?|8
+12 - 4 = ?|8
+6 x 7 = ?|42
+18 / 3 = ?|6

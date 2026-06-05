@@ -173,6 +173,12 @@ public sealed class MathChallengePopup : MonoBehaviour
         Complete(MathChallengeExitReason.Quit);
     }
 
+    public void Hide()
+    {
+        completedCallback = null;
+        HideImmediate();
+    }
+
     private void Complete(MathChallengeExitReason reason)
     {
         HideImmediate();

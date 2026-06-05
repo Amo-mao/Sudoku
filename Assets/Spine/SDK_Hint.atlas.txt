@@ -1,0 +1,20 @@
+
+SDK_Hint.png
+size: 309,218
+format: RGBA8888
+filter: Linear,Linear
+repeat: none
+Hint_1
+  rotate: false
+  xy: 115, 24
+  size: 192, 192
+  orig: 192, 192
+  offset: 0, 0
+  index: -1
+Hint_2
+  rotate: true
+  xy: 2, 2
+  size: 214, 111
+  orig: 214, 111
+  offset: 0, 0
+  index: -1

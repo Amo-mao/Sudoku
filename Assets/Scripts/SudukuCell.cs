@@ -27,6 +27,7 @@ public sealed class SudukuCell : MonoBehaviour
     [SerializeField] private Color selectedColor = new Color(0.83f, 0.91f, 1f, 1f);
     [SerializeField] private Color fixedNumberColor = new Color(0.16f, 0.16f, 0.16f, 1f);
     [SerializeField] private Color editableNumberColor = new Color(0.08f, 0.28f, 0.75f, 1f);
+    [SerializeField] private Color hintNumberColor = new Color(0.05f, 0.55f, 0.28f, 1f);
     [SerializeField] private Color okNumberColor = Color.white;
     [SerializeField] private Color noteNumberColor = new Color(0.28f, 0.36f, 0.48f, 1f);
     [SerializeField] private Color lockCountdownColor = new Color(0.16f, 0.16f, 0.16f, 1f);
@@ -40,6 +41,7 @@ public sealed class SudukuCell : MonoBehaviour
     public int Value { get; private set; }
     public bool IsFixed { get; private set; }
     public bool IsWrong { get; private set; }
+    public bool IsHint { get; private set; }
     public bool IsPenaltyLocked { get; private set; }
 
     private readonly bool[] notes = new bool[NoteCount + 1];
@@ -89,9 +91,15 @@ public sealed class SudukuCell : MonoBehaviour
 
     public void SetValue(int value, bool isFixed, bool isWrong)
     {
+        SetValue(value, isFixed, isWrong, false);
+    }
+
+    public void SetValue(int value, bool isFixed, bool isWrong, bool isHint)
+    {
         Value = Mathf.Clamp(value, 0, 9);
         IsFixed = isFixed;
         IsWrong = Value != 0 && !IsFixed && isWrong;
+        IsHint = Value != 0 && !IsFixed && !IsWrong && isHint;
 
         CacheTextReferences();
 
@@ -284,6 +292,10 @@ public sealed class SudukuCell : MonoBehaviour
         if (IsWrong)
         {
             valueText.color = wrongColor;
+        }
+        else if (IsHint)
+        {
+            valueText.color = hintNumberColor;
         }
         else
         {

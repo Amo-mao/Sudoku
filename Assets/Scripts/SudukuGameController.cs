@@ -13,6 +13,14 @@ public enum MathChallengeQuitPenalty
     ShowAdThenLock
 }
 
+public enum SudukuGameState
+{
+    Home,
+    Playing,
+    MathChallenge,
+    Paused
+}
+
 [DisallowMultipleComponent]
 [AddComponentMenu("UI/Suduku Game Controller")]
 public sealed class SudukuGameController : MonoBehaviour
@@ -21,10 +29,32 @@ public sealed class SudukuGameController : MonoBehaviour
     private const int BoxLength = 3;
     private const int EmptyValue = 0;
     private const int ShineSweepFrameStagger = 15;
+    private const string ReturnButtonName = "ButtonReturn";
+    private const string EraseButtonName = "ButtonErase";
+    private const string NotesButtonName = "ButtonNotes";
+    private const string HintButtonName = "ButtonHint";
+    private const string HintCountTextName = "HintCount";
+    private const string EraseIdleAnimationName = "idle";
+    private const string EraseClickAnimationName = "Click";
+    private const string HintIdleAnimationName = "idle";
+    private const string HintClickAnimationName = "Click";
+    private const string HintWiggleAnimationName = "wiggle";
+    private const string ReturnIdleAnimationName = "Return_idle";
+    private const string ReturnClickAnimationName = "Return_Click";
+    private const string ObjectHomeName = "ObjectHome";
+    private const string ButtonPlayName = "ButtonPlay";
+    private const string IconBackName = "IconBack";
 
     [SerializeField] private SudukuBoardLayout boardLayout;
     [SerializeField, Range(20, 64)] private int holesToDig = 45;
     [SerializeField] private bool generateOnStart = true;
+
+    [Header("Game Flow")]
+    [SerializeField] private bool startAtHome = true;
+    [SerializeField] private GameObject objectHome;
+    [SerializeField] private Button playButton;
+    [SerializeField] private Button backButton;
+    [SerializeField] private GameObject[] gameplayRootObjects;
 
     [Header("Number Colors")]
     [SerializeField] private Color wrongNumberColor = new Color(0.85f, 0.12f, 0.12f, 1f);
@@ -35,6 +65,11 @@ public sealed class SudukuGameController : MonoBehaviour
     [SerializeField] private SkeletonAnimation noteModeSkeletonAnimation;
     [SerializeField] private string noteModeIdleAnimation = "idle";
     [SerializeField] private string noteModeActiveAnimation = "activate";
+
+    [Header("Hints")]
+    [SerializeField, Min(0)] private int initialHintCount = 3;
+    [SerializeField] private TMP_Text hintCountText;
+    [SerializeField] private string hintCountFormat = "{0}";
 
     [Header("Math Challenge")]
     [SerializeField] private MathChallengePopup mathChallengePopup;
@@ -57,24 +92,35 @@ public sealed class SudukuGameController : MonoBehaviour
     private readonly bool[] completedRows = new bool[BoardLength];
     private readonly bool[] completedColumns = new bool[BoardLength];
     private readonly bool[] completedBoxes = new bool[BoardLength];
+    private readonly List<GameObject> autoGameplayRootObjects = new List<GameObject>();
 
     private SudukuCell selectedCell;
     private SudukuCell pendingMathChallengeCell;
+    private Button hintButton;
+    private AnimatedUIButton hintAnimatedButton;
     private int selectedNumber;
     private int consecutiveWrongPlacements;
+    private int remainingHintCount;
     private bool isMathChallengeActive;
     private bool isNoteMode;
+    private bool hasGeneratedPuzzle;
     private Coroutine shineSweepRoutine;
+    private SudukuGameState currentState = SudukuGameState.Home;
+    private SudukuGameState stateBeforeMathChallenge = SudukuGameState.Playing;
 
     private struct MoveRecord
     {
         public SudukuCell Cell;
         public int PreviousValue;
         public int NewValue;
+        public bool PreviousWasHint;
+        public bool NewWasHint;
     }
 
     private void Awake()
     {
+        remainingHintCount = initialHintCount;
+
         if (boardLayout == null)
         {
             boardLayout = GetComponent<SudukuBoardLayout>();
@@ -84,6 +130,8 @@ public sealed class SudukuGameController : MonoBehaviour
         PrepareMathChallengePopup();
         BindCellButtons();
         BindControlButtons();
+        PrepareGameFlow();
+        RefreshHintCountDisplay();
     }
 
     private void OnValidate()
@@ -96,10 +144,62 @@ public sealed class SudukuGameController : MonoBehaviour
 
     private void Start()
     {
-        if (generateOnStart)
+        if (startAtHome && objectHome != null)
+        {
+            EnterHome(false);
+            return;
+        }
+
+        EnterPlaying(generateOnStart);
+    }
+
+    public void EnterHome()
+    {
+        EnterHome(true);
+    }
+
+    public void EnterPlaying()
+    {
+        EnterPlaying(!hasGeneratedPuzzle && generateOnStart);
+    }
+
+    public void EnterPlaying(bool generatePuzzle)
+    {
+        CloseMathChallengeIfNeeded();
+        currentState = SudukuGameState.Playing;
+        isMathChallengeActive = false;
+
+        SetHomeVisible(false);
+        SetGameplayVisible(true);
+
+        if (generatePuzzle)
         {
             GenerateNewPuzzle();
         }
+
+        RefreshBoardState();
+    }
+
+    private void EnterHome(bool closeMathChallenge)
+    {
+        if (closeMathChallenge)
+        {
+            CloseMathChallengeIfNeeded();
+        }
+
+        currentState = SudukuGameState.Home;
+        isMathChallengeActive = false;
+        selectedNumber = EmptyValue;
+        SetNoteMode(false);
+        SelectCell(null);
+
+        SetHomeVisible(true);
+        SetGameplayVisible(false);
+    }
+
+    private bool IsPlayingState()
+    {
+        return currentState == SudukuGameState.Playing;
     }
 
     [ContextMenu("Generate New Puzzle")]
@@ -113,6 +213,8 @@ public sealed class SudukuGameController : MonoBehaviour
         ApplyPuzzle();
         RefreshCompletedUnitCache();
         history.Clear();
+        remainingHintCount = initialHintCount;
+        RefreshHintCountDisplay();
         selectedNumber = EmptyValue;
         consecutiveWrongPlacements = 0;
         isMathChallengeActive = false;
@@ -120,10 +222,16 @@ public sealed class SudukuGameController : MonoBehaviour
         ClearPenaltyLocks();
         SetNoteMode(false);
         SelectCell(null);
+        hasGeneratedPuzzle = true;
     }
 
     public void InputNumber(int value)
     {
+        if (!IsPlayingState())
+        {
+            return;
+        }
+
         if (isMathChallengeActive)
         {
             return;
@@ -161,7 +269,9 @@ public sealed class SudukuGameController : MonoBehaviour
         {
             Cell = selectedCell,
             PreviousValue = selectedCell.Value,
-            NewValue = value
+            NewValue = value,
+            PreviousWasHint = selectedCell.IsHint,
+            NewWasHint = false
         });
 
         SudukuCell changedCell = selectedCell;
@@ -180,6 +290,11 @@ public sealed class SudukuGameController : MonoBehaviour
 
     public void UndoLastMove()
     {
+        if (!IsPlayingState())
+        {
+            return;
+        }
+
         if (isMathChallengeActive)
         {
             return;
@@ -188,7 +303,10 @@ public sealed class SudukuGameController : MonoBehaviour
         while (history.Count > 0)
         {
             MoveRecord move = history.Pop();
-            if (move.Cell == null || move.Cell.IsFixed || move.Cell.Value != move.NewValue)
+            if (move.Cell == null ||
+                move.Cell.IsFixed ||
+                move.Cell.Value != move.NewValue ||
+                move.Cell.IsHint != move.NewWasHint)
             {
                 continue;
             }
@@ -199,7 +317,7 @@ public sealed class SudukuGameController : MonoBehaviour
                 continue;
             }
 
-            move.Cell.SetValue(move.PreviousValue, false, IsWrongValue(move.Cell, move.PreviousValue));
+            move.Cell.SetValue(move.PreviousValue, false, IsWrongValue(move.Cell, move.PreviousValue), move.PreviousWasHint);
             RefreshCompletedUnitCache();
             SelectCell(move.Cell);
             return;
@@ -208,6 +326,11 @@ public sealed class SudukuGameController : MonoBehaviour
 
     public void ToggleNoteMode()
     {
+        if (!IsPlayingState())
+        {
+            return;
+        }
+
         if (isMathChallengeActive)
         {
             return;
@@ -310,6 +433,8 @@ public sealed class SudukuGameController : MonoBehaviour
         }
 
         isMathChallengeActive = true;
+        stateBeforeMathChallenge = currentState;
+        currentState = SudukuGameState.MathChallenge;
         consecutiveWrongPlacements = 0;
         mathChallengePopup.Show(HandleMathChallengeClosed);
     }
@@ -317,6 +442,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private void HandleMathChallengeClosed(MathChallengeExitReason reason)
     {
         isMathChallengeActive = false;
+        currentState = stateBeforeMathChallenge == SudukuGameState.MathChallenge ? SudukuGameState.Playing : stateBeforeMathChallenge;
         RefreshBoardState();
 
         if (reason == MathChallengeExitReason.Quit)
@@ -521,17 +647,195 @@ public sealed class SudukuGameController : MonoBehaviour
 
             if (IsReturnButton(button))
             {
+                ConfigureControlButtonAnimation(button, UIButtonAnimationMode.LegacyAnimation, ReturnIdleAnimationName, ReturnClickAnimationName);
                 button.onClick.AddListener(UndoLastMove);
             }
             else if (IsEraseButton(button))
             {
+                ConfigureControlButtonAnimation(button, UIButtonAnimationMode.Spine, EraseIdleAnimationName, EraseClickAnimationName);
                 button.onClick.AddListener(() => InputNumber(EmptyValue));
+            }
+            else if (IsHintButton(button))
+            {
+                hintButton = button;
+                hintAnimatedButton = ConfigureControlButtonAnimation(button, UIButtonAnimationMode.Spine, HintIdleAnimationName, HintClickAnimationName, false);
+                CacheHintCountText(button.transform);
+                RefreshHintCountDisplay();
+                button.onClick.AddListener(UseHint);
             }
         }
     }
 
+    private void PrepareGameFlow()
+    {
+        if (objectHome == null)
+        {
+            Transform homeTransform = FindSceneTransformByName(ObjectHomeName);
+            if (homeTransform != null)
+            {
+                objectHome = homeTransform.gameObject;
+            }
+        }
+
+        if (playButton == null)
+        {
+            Transform playTransform = objectHome != null
+                ? FindDeepChild(objectHome.transform, ButtonPlayName)
+                : FindSceneTransformByName(ButtonPlayName);
+
+            playButton = GetOrCreateButton(playTransform);
+        }
+
+        if (backButton == null)
+        {
+            backButton = GetOrCreateButton(FindSceneTransformByName(IconBackName));
+        }
+
+        CacheAutoGameplayRoots();
+
+        if (playButton != null)
+        {
+            playButton.onClick.AddListener(EnterPlaying);
+        }
+
+        if (backButton != null)
+        {
+            backButton.onClick.AddListener(EnterHome);
+        }
+    }
+
+    private static Button GetOrCreateButton(Transform target)
+    {
+        if (target == null)
+        {
+            return null;
+        }
+
+        Button button = target.GetComponent<Button>();
+        if (button == null)
+        {
+            button = target.gameObject.AddComponent<Button>();
+        }
+
+        if (button.targetGraphic == null)
+        {
+            button.targetGraphic = target.GetComponent<Graphic>();
+        }
+
+        return button;
+    }
+
+    private void SetHomeVisible(bool visible)
+    {
+        if (objectHome != null)
+        {
+            objectHome.SetActive(visible);
+        }
+    }
+
+    private void SetGameplayVisible(bool visible)
+    {
+        if (gameplayRootObjects != null && gameplayRootObjects.Length > 0)
+        {
+            foreach (GameObject gameplayRoot in gameplayRootObjects)
+            {
+                if (gameplayRoot != null)
+                {
+                    gameplayRoot.SetActive(visible);
+                }
+            }
+
+            return;
+        }
+
+        if (autoGameplayRootObjects.Count > 0)
+        {
+            foreach (GameObject gameplayRoot in autoGameplayRootObjects)
+            {
+                if (gameplayRoot != null)
+                {
+                    gameplayRoot.SetActive(visible);
+                }
+            }
+
+            return;
+        }
+
+        if (objectHome == null || objectHome.transform.parent == null)
+        {
+            return;
+        }
+    }
+
+    private void CacheAutoGameplayRoots()
+    {
+        autoGameplayRootObjects.Clear();
+
+        if (objectHome == null || objectHome.transform.parent == null)
+        {
+            return;
+        }
+
+        Transform parent = objectHome.transform.parent;
+        for (int index = 0; index < parent.childCount; index++)
+        {
+            Transform child = parent.GetChild(index);
+            if (child == objectHome.transform || IsMathChallengeTransform(child) || IsControllerTransform(child))
+            {
+                continue;
+            }
+
+            if (child.gameObject.activeSelf)
+            {
+                autoGameplayRootObjects.Add(child.gameObject);
+            }
+        }
+    }
+
+    private bool IsMathChallengeTransform(Transform target)
+    {
+        return mathChallengePopup != null && target == mathChallengePopup.transform;
+    }
+
+    private bool IsControllerTransform(Transform target)
+    {
+        return transform == target || transform.IsChildOf(target);
+    }
+
+    private void CloseMathChallengeIfNeeded()
+    {
+        if (mathChallengePopup != null)
+        {
+            mathChallengePopup.Hide();
+        }
+
+        pendingMathChallengeCell = null;
+    }
+
+    private static AnimatedUIButton ConfigureControlButtonAnimation(Button button, UIButtonAnimationMode mode, string idleAnimation, string clickAnimation)
+    {
+        return ConfigureControlButtonAnimation(button, mode, idleAnimation, clickAnimation, true);
+    }
+
+    private static AnimatedUIButton ConfigureControlButtonAnimation(Button button, UIButtonAnimationMode mode, string idleAnimation, string clickAnimation, bool playClickAutomatically)
+    {
+        AnimatedUIButton animatedButton = button.GetComponent<AnimatedUIButton>();
+        if (animatedButton == null)
+        {
+            animatedButton = button.gameObject.AddComponent<AnimatedUIButton>();
+        }
+
+        animatedButton.Configure(mode, idleAnimation, clickAnimation, playClickAutomatically);
+        return animatedButton;
+    }
+
     private void SelectCell(SudukuCell cell)
     {
+        if (!IsPlayingState() && cell != null)
+        {
+            return;
+        }
+
         if (isMathChallengeActive && cell != null)
         {
             return;
@@ -546,6 +850,220 @@ public sealed class SudukuGameController : MonoBehaviour
         selectedCell = cell;
         selectedNumber = selectedCell != null ? selectedCell.Value : EmptyValue;
         RefreshBoardState();
+    }
+
+    private void UseHint()
+    {
+        if (!IsPlayingState())
+        {
+            return;
+        }
+
+        if (isMathChallengeActive || remainingHintCount <= 0)
+        {
+            if (remainingHintCount <= 0)
+            {
+                PlayHintButtonAnimation(HintWiggleAnimationName);
+            }
+
+            RefreshHintCountDisplay();
+            return;
+        }
+
+        PlayHintButtonAnimation(HintClickAnimationName);
+
+        SudukuCell targetCell = GetHintTargetCell();
+        if (targetCell == null)
+        {
+            RefreshBoardState();
+            return;
+        }
+
+        int answer = solution[targetCell.Row, targetCell.Column];
+        if (answer == EmptyValue)
+        {
+            RefreshBoardState();
+            return;
+        }
+
+        history.Push(new MoveRecord
+        {
+            Cell = targetCell,
+            PreviousValue = targetCell.Value,
+            NewValue = answer,
+            PreviousWasHint = targetCell.IsHint,
+            NewWasHint = true
+        });
+
+        remainingHintCount--;
+        RefreshHintCountDisplay();
+        targetCell.SetValue(answer, false, false, true);
+        SelectCell(targetCell);
+        targetCell.PlayShineSweep();
+        consecutiveWrongPlacements = 0;
+        TriggerNewlyCompletedUnits(targetCell);
+    }
+
+    private SudukuCell GetHintTargetCell()
+    {
+        if (IsHintEligibleCell(selectedCell))
+        {
+            return selectedCell;
+        }
+
+        SudukuCell bestCell = null;
+        int bestCandidateCount = int.MaxValue;
+        for (int row = 0; row < BoardLength; row++)
+        {
+            for (int column = 0; column < BoardLength; column++)
+            {
+                SudukuCell cell = cells[row, column];
+                if (!IsHintEligibleCell(cell))
+                {
+                    continue;
+                }
+
+                int candidateCount = CountCandidates(cell);
+                if (candidateCount < bestCandidateCount)
+                {
+                    bestCell = cell;
+                    bestCandidateCount = candidateCount;
+                }
+            }
+        }
+
+        return bestCell;
+    }
+
+    private static bool IsHintEligibleCell(SudukuCell cell)
+    {
+        return cell != null &&
+               !cell.IsFixed &&
+               !cell.IsPenaltyLocked &&
+               cell.Value == EmptyValue;
+    }
+
+    private void CacheHintCountText(Transform hintButtonTransform)
+    {
+        if (hintCountText != null)
+        {
+            return;
+        }
+
+        Transform existingText = FindDeepChild(hintButtonTransform, HintCountTextName);
+        if (existingText != null)
+        {
+            hintCountText = existingText.GetComponent<TMP_Text>();
+        }
+
+        if (hintCountText == null && hintButtonTransform != null)
+        {
+            hintCountText = CreateHintCountText(hintButtonTransform);
+        }
+    }
+
+    private TMP_Text CreateHintCountText(Transform parent)
+    {
+        GameObject textObject = new GameObject(HintCountTextName, typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(parent, false);
+
+        RectTransform rectTransform = textObject.GetComponent<RectTransform>();
+        rectTransform.anchorMin = new Vector2(0.5f, 0.5f);
+        rectTransform.anchorMax = new Vector2(0.5f, 0.5f);
+        rectTransform.pivot = new Vector2(0.5f, 0.5f);
+        rectTransform.anchoredPosition = new Vector2(18f, 18f);
+        rectTransform.sizeDelta = new Vector2(42f, 28f);
+
+        TMP_Text text = textObject.GetComponent<TMP_Text>();
+        text.alignment = TextAlignmentOptions.Center;
+        text.enableAutoSizing = true;
+        text.fontSizeMin = 10f;
+        text.fontSizeMax = 22f;
+        text.color = Color.white;
+        text.raycastTarget = false;
+        return text;
+    }
+
+    private void RefreshHintCountDisplay()
+    {
+        if (hintCountText != null)
+        {
+            hintCountText.text = string.Format(hintCountFormat, remainingHintCount);
+        }
+
+        if (hintButton != null)
+        {
+            hintButton.interactable = true;
+        }
+    }
+
+    private void PlayHintButtonAnimation(string animationName)
+    {
+        if (hintAnimatedButton == null && hintButton != null)
+        {
+            hintAnimatedButton = hintButton.GetComponent<AnimatedUIButton>();
+        }
+
+        if (hintAnimatedButton != null)
+        {
+            hintAnimatedButton.PlayOneShot(animationName);
+        }
+    }
+
+    private int CountCandidates(SudukuCell cell)
+    {
+        int count = 0;
+        for (int value = 1; value <= BoardLength; value++)
+        {
+            if (CanPlaceCandidate(cell, value))
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private bool CanPlaceCandidate(SudukuCell cell, int value)
+    {
+        if (cell == null || value < 1 || value > BoardLength)
+        {
+            return false;
+        }
+
+        for (int column = 0; column < BoardLength; column++)
+        {
+            SudukuCell rowCell = cells[cell.Row, column];
+            if (rowCell != cell && rowCell != null && rowCell.Value == value)
+            {
+                return false;
+            }
+        }
+
+        for (int row = 0; row < BoardLength; row++)
+        {
+            SudukuCell columnCell = cells[row, cell.Column];
+            if (columnCell != cell && columnCell != null && columnCell.Value == value)
+            {
+                return false;
+            }
+        }
+
+        int startRow = cell.Row / BoxLength * BoxLength;
+        int startColumn = cell.Column / BoxLength * BoxLength;
+        for (int rowOffset = 0; rowOffset < BoxLength; rowOffset++)
+        {
+            for (int columnOffset = 0; columnOffset < BoxLength; columnOffset++)
+            {
+                SudukuCell boxCell = cells[startRow + rowOffset, startColumn + columnOffset];
+                if (boxCell != cell && boxCell != null && boxCell.Value == value)
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     private void ClearPenaltyLocks()
@@ -891,39 +1409,47 @@ public sealed class SudukuGameController : MonoBehaviour
 
     private static bool IsReturnButton(Button button)
     {
-        return HasImageSpriteNamed(button, "返回") || HasButtonText(button, "return");
+        return button.name == ReturnButtonName;
     }
 
     private static bool IsEraseButton(Button button)
     {
-        return HasImageSpriteNamed(button, "橡皮擦") || HasButtonText(button, "erase");
+        return button.name == EraseButtonName;
     }
 
     private static bool IsNoteModeButton(Button button)
     {
-        return button.name == "Button (2)" ||
-               HasButtonText(button, "note") ||
-               HasButtonText(button, "notes");
+        return button.name == NotesButtonName;
     }
 
-    private static bool HasButtonText(Button button, string expectedText)
+    private static bool IsHintButton(Button button)
     {
-        TMP_Text text = button.GetComponentInChildren<TMP_Text>(true);
-        return text != null && string.Equals(text.text.Trim(), expectedText, System.StringComparison.OrdinalIgnoreCase);
+        return button.name == HintButtonName;
     }
 
-    private static bool HasImageSpriteNamed(Button button, string spriteName)
+    private static Transform FindDeepChild(Transform parent, string childName)
     {
-        Image[] images = button.GetComponentsInChildren<Image>(true);
-        foreach (Image image in images)
+        if (parent == null)
         {
-            if (image.sprite != null && image.sprite.name.Contains(spriteName))
+            return null;
+        }
+
+        for (int index = 0; index < parent.childCount; index++)
+        {
+            Transform child = parent.GetChild(index);
+            if (child.name == childName)
             {
-                return true;
+                return child;
+            }
+
+            Transform result = FindDeepChild(child, childName);
+            if (result != null)
+            {
+                return result;
             }
         }
 
-        return false;
+        return null;
     }
 
     private static bool IsInsideBoard(int row, int column)
