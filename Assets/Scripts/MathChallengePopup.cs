@@ -40,12 +40,13 @@ public sealed class MathChallengePopup : MonoBehaviour
     private Action<MathChallengeExitReason> completedCallback;
     private bool initialized;
     private bool isUpdatingAnswerInput;
+    private bool isOpeningFromShow;
 
     public bool IsOpen { get; private set; }
 
     private void Awake()
     {
-        Initialize(true);
+        Initialize(!isOpeningFromShow);
     }
 
     private void Update()
@@ -109,6 +110,9 @@ public sealed class MathChallengePopup : MonoBehaviour
 
     public void Show(Action<MathChallengeExitReason> onCompleted)
     {
+        isOpeningFromShow = true;
+        gameObject.SetActive(true);
+        isOpeningFromShow = false;
         Initialize(false);
 
         completedCallback = onCompleted;
@@ -117,7 +121,6 @@ public sealed class MathChallengePopup : MonoBehaviour
         SetAnswerInputTextWithoutNotify(currentAnswer);
         RefreshAnswerText();
 
-        gameObject.SetActive(true);
         IsOpen = true;
         ActivateAnswerInput();
 
