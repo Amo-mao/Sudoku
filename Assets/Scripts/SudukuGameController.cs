@@ -35,6 +35,8 @@ public sealed class SudukuGameController : MonoBehaviour
     private const string NotesButtonName = "ButtonNotes";
     private const string HintButtonName = "ButtonHint";
     private const string HintCountTextName = "HintCount";
+    private const string HintAdBadgeName = "AdBadge";
+    private const string HintAdBadgeWiggleAnimationName = "AdBadge_wiggle";
     private const string CellShineSweepAnimationName = "Cell_ShineSweep";
     private const string EraseIdleAnimationName = "idle";
     private const string EraseClickAnimationName = "Click";
@@ -73,6 +75,8 @@ public sealed class SudukuGameController : MonoBehaviour
     [SerializeField, Min(0)] private int initialHintCount = 3;
     [SerializeField] private TMP_Text hintCountText;
     [SerializeField] private string hintCountFormat = "{0}";
+    [SerializeField] private GameObject hintAdBadge;
+    [SerializeField] private UnityEngine.Animation hintAdBadgeAnimation;
 
     [Header("Math Challenge")]
     [SerializeField] private MathChallengePopup mathChallengePopup;
@@ -743,6 +747,7 @@ public sealed class SudukuGameController : MonoBehaviour
                 hintButton = button;
                 hintAnimatedButton = ConfigureControlButtonAnimation(button, UIButtonAnimationMode.Spine, HintIdleAnimationName, HintClickAnimationName, false);
                 CacheHintCountText(button.transform);
+                CacheHintAdBadge(button.transform);
                 RefreshHintCountDisplay();
                 button.onClick.AddListener(UseHint);
             }
@@ -1087,6 +1092,27 @@ public sealed class SudukuGameController : MonoBehaviour
         return text;
     }
 
+    private void CacheHintAdBadge(Transform hintButtonTransform)
+    {
+        if (hintAdBadge == null && hintButtonTransform != null)
+        {
+            Transform adBadgeTransform = FindDeepChild(hintButtonTransform, HintAdBadgeName);
+            if (adBadgeTransform != null)
+            {
+                hintAdBadge = adBadgeTransform.gameObject;
+            }
+        }
+
+        if (hintAdBadgeAnimation == null && hintAdBadge != null)
+        {
+            hintAdBadgeAnimation = hintAdBadge.GetComponent<UnityEngine.Animation>();
+            if (hintAdBadgeAnimation == null)
+            {
+                hintAdBadgeAnimation = hintAdBadge.GetComponentInChildren<UnityEngine.Animation>(true);
+            }
+        }
+    }
+
     private void RefreshHintCountDisplay()
     {
         if (hintCountText != null)
@@ -1097,6 +1123,80 @@ public sealed class SudukuGameController : MonoBehaviour
         if (hintButton != null)
         {
             hintButton.interactable = true;
+        }
+
+        RefreshHintAdBadge();
+    }
+
+    private void RefreshHintAdBadge()
+    {
+        if (hintAdBadge == null && hintButton != null)
+        {
+            CacheHintAdBadge(hintButton.transform);
+        }
+
+        if (hintAdBadge == null)
+        {
+            return;
+        }
+
+        bool shouldShowAdBadge = remainingHintCount <= 0;
+        if (hintAdBadge.activeSelf != shouldShowAdBadge)
+        {
+            hintAdBadge.SetActive(shouldShowAdBadge);
+        }
+
+        if (shouldShowAdBadge)
+        {
+            PlayHintAdBadgeWiggle();
+        }
+        else
+        {
+            StopHintAdBadgeWiggle();
+        }
+    }
+
+    private void PlayHintAdBadgeWiggle()
+    {
+        if (hintAdBadgeAnimation == null)
+        {
+            CacheHintAdBadge(hintButton != null ? hintButton.transform : null);
+        }
+
+        if (hintAdBadgeAnimation == null)
+        {
+            return;
+        }
+
+        AnimationClip clip = hintAdBadgeAnimation.GetClip(HintAdBadgeWiggleAnimationName);
+        if (clip == null)
+        {
+            return;
+        }
+
+        hintAdBadgeAnimation.wrapMode = WrapMode.Loop;
+        UnityEngine.AnimationState state = hintAdBadgeAnimation[HintAdBadgeWiggleAnimationName];
+        if (state != null)
+        {
+            state.wrapMode = WrapMode.Loop;
+        }
+
+        if (!hintAdBadgeAnimation.IsPlaying(HintAdBadgeWiggleAnimationName))
+        {
+            hintAdBadgeAnimation.Play(HintAdBadgeWiggleAnimationName);
+        }
+    }
+
+    private void StopHintAdBadgeWiggle()
+    {
+        if (hintAdBadgeAnimation == null)
+        {
+            return;
+        }
+
+        if (hintAdBadgeAnimation.IsPlaying(HintAdBadgeWiggleAnimationName))
+        {
+            hintAdBadgeAnimation.Stop(HintAdBadgeWiggleAnimationName);
         }
     }
 
