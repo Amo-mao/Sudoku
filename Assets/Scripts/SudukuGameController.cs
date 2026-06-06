@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using TMPro;
@@ -34,6 +35,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private const string NotesButtonName = "ButtonNotes";
     private const string HintButtonName = "ButtonHint";
     private const string HintCountTextName = "HintCount";
+    private const string CellShineSweepAnimationName = "Cell_ShineSweep";
     private const string EraseIdleAnimationName = "idle";
     private const string EraseClickAnimationName = "Click";
     private const string HintIdleAnimationName = "idle";
@@ -50,6 +52,7 @@ public sealed class SudukuGameController : MonoBehaviour
     [SerializeField] private bool generateOnStart = true;
 
     [Header("Game Flow")]
+    [SerializeField] private bool useAppController = true;
     [SerializeField] private bool startAtHome = true;
     [SerializeField] private GameObject objectHome;
     [SerializeField] private Button playButton;
@@ -107,6 +110,10 @@ public sealed class SudukuGameController : MonoBehaviour
     private Coroutine shineSweepRoutine;
     private SudukuGameState currentState = SudukuGameState.Home;
     private SudukuGameState stateBeforeMathChallenge = SudukuGameState.Playing;
+    private Action gameBackHandler;
+    private Action puzzleCompletedHandler;
+    private bool hasCompletedCurrentPuzzle;
+    private bool completePuzzleAfterShineSweep;
 
     private struct MoveRecord
     {
@@ -144,6 +151,16 @@ public sealed class SudukuGameController : MonoBehaviour
 
     private void Start()
     {
+        if (useAppController)
+        {
+            if (FindObjectsByType<SudokuAppController>(FindObjectsInactive.Include, FindObjectsSortMode.None).Length == 0)
+            {
+                gameObject.AddComponent<SudokuAppController>();
+            }
+
+            return;
+        }
+
         if (startAtHome && objectHome != null)
         {
             EnterHome(false);
@@ -178,6 +195,69 @@ public sealed class SudukuGameController : MonoBehaviour
         }
 
         RefreshBoardState();
+    }
+
+    public void LoadPuzzle(SudokuPuzzleData puzzleData)
+    {
+        if (puzzleData == null)
+        {
+            Debug.LogWarning("Cannot load a null sudoku puzzle.", this);
+            return;
+        }
+
+        CloseMathChallengeIfNeeded();
+        currentState = SudukuGameState.Playing;
+        isMathChallengeActive = false;
+
+        SetHomeVisible(false);
+        SetGameplayVisible(true);
+        PrepareCells(false);
+
+        for (int row = 0; row < BoardLength; row++)
+        {
+            for (int column = 0; column < BoardLength; column++)
+            {
+                puzzle[row, column] = puzzleData.GetPuzzleValue(row, column);
+                solution[row, column] = puzzleData.GetSolutionValue(row, column);
+            }
+        }
+
+        ApplyPuzzle();
+        RefreshCompletedUnitCache();
+        history.Clear();
+        remainingHintCount = initialHintCount;
+        RefreshHintCountDisplay();
+        selectedNumber = EmptyValue;
+        consecutiveWrongPlacements = 0;
+        pendingMathChallengeCell = null;
+        ClearPenaltyLocks();
+        SetNoteMode(false);
+        SelectCell(null);
+        hasGeneratedPuzzle = true;
+        hasCompletedCurrentPuzzle = false;
+        completePuzzleAfterShineSweep = false;
+        RefreshBoardState();
+    }
+
+    public void SetGameBackHandler(Action handler)
+    {
+        gameBackHandler = handler;
+    }
+
+    public void SetPuzzleCompletedHandler(Action handler)
+    {
+        puzzleCompletedHandler = handler;
+    }
+
+    public void HideGameplayForMenu()
+    {
+        CloseMathChallengeIfNeeded();
+        currentState = SudukuGameState.Home;
+        isMathChallengeActive = false;
+        selectedNumber = EmptyValue;
+        SetNoteMode(false);
+        SelectCell(null);
+        SetGameplayVisible(false);
     }
 
     private void EnterHome(bool closeMathChallenge)
@@ -219,10 +299,12 @@ public sealed class SudukuGameController : MonoBehaviour
         consecutiveWrongPlacements = 0;
         isMathChallengeActive = false;
         pendingMathChallengeCell = null;
+        completePuzzleAfterShineSweep = false;
         ClearPenaltyLocks();
         SetNoteMode(false);
         SelectCell(null);
         hasGeneratedPuzzle = true;
+        hasCompletedCurrentPuzzle = false;
     }
 
     public void InputNumber(int value)
@@ -286,6 +368,7 @@ public sealed class SudukuGameController : MonoBehaviour
         }
 
         TriggerNewlyCompletedUnits(changedCell);
+        CheckPuzzleCompleted();
     }
 
     public void UndoLastMove()
@@ -700,8 +783,19 @@ public sealed class SudukuGameController : MonoBehaviour
 
         if (backButton != null)
         {
-            backButton.onClick.AddListener(EnterHome);
+            backButton.onClick.AddListener(HandleGameBackButton);
         }
+    }
+
+    private void HandleGameBackButton()
+    {
+        if (gameBackHandler != null)
+        {
+            gameBackHandler.Invoke();
+            return;
+        }
+
+        EnterHome();
     }
 
     private static Button GetOrCreateButton(Transform target)
@@ -780,7 +874,7 @@ public sealed class SudukuGameController : MonoBehaviour
         for (int index = 0; index < parent.childCount; index++)
         {
             Transform child = parent.GetChild(index);
-            if (child == objectHome.transform || IsMathChallengeTransform(child) || IsControllerTransform(child))
+            if (child == objectHome.transform || IsMathChallengeTransform(child) || IsControllerTransform(child) || IsMenuPageTransform(child))
             {
                 continue;
             }
@@ -800,6 +894,14 @@ public sealed class SudukuGameController : MonoBehaviour
     private bool IsControllerTransform(Transform target)
     {
         return transform == target || transform.IsChildOf(target);
+    }
+
+    private static bool IsMenuPageTransform(Transform target)
+    {
+        return target.name == "Daily_10_Levels" ||
+               target.name == "ClassicDifficultyPage" ||
+               target.name == "Object_WellDone" ||
+               target.name.StartsWith("Levels_", StringComparison.Ordinal);
     }
 
     private void CloseMathChallengeIfNeeded()
@@ -902,6 +1004,7 @@ public sealed class SudukuGameController : MonoBehaviour
         targetCell.PlayShineSweep();
         consecutiveWrongPlacements = 0;
         TriggerNewlyCompletedUnits(targetCell);
+        CheckPuzzleCompleted();
     }
 
     private SudukuCell GetHintTargetCell()
@@ -1185,7 +1288,14 @@ public sealed class SudukuGameController : MonoBehaviour
             }
         }
 
+        float lastClipLength = GetLongestShineSweepClipLength(cellsToPlay);
+        if (lastClipLength > 0f)
+        {
+            yield return new WaitForSeconds(lastClipLength);
+        }
+
         shineSweepRoutine = null;
+        CompletePuzzleIfWaitingForShineSweep();
     }
 
     private bool IsRowComplete(int row)
@@ -1231,6 +1341,73 @@ public sealed class SudukuGameController : MonoBehaviour
         }
 
         return true;
+    }
+
+    private bool IsBoardComplete()
+    {
+        for (int row = 0; row < BoardLength; row++)
+        {
+            if (!IsRowComplete(row))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void CheckPuzzleCompleted()
+    {
+        if (hasCompletedCurrentPuzzle || !IsPlayingState() || !IsBoardComplete())
+        {
+            return;
+        }
+
+        hasCompletedCurrentPuzzle = true;
+        if (shineSweepRoutine != null)
+        {
+            completePuzzleAfterShineSweep = true;
+            return;
+        }
+
+        CompletePuzzle();
+    }
+
+    private void CompletePuzzleIfWaitingForShineSweep()
+    {
+        if (!completePuzzleAfterShineSweep)
+        {
+            return;
+        }
+
+        completePuzzleAfterShineSweep = false;
+        CompletePuzzle();
+    }
+
+    private void CompletePuzzle()
+    {
+        puzzleCompletedHandler?.Invoke();
+    }
+
+    private static float GetLongestShineSweepClipLength(List<SudukuCell> cellsToPlay)
+    {
+        float longestLength = 0f;
+        foreach (SudukuCell cell in cellsToPlay)
+        {
+            if (cell == null)
+            {
+                continue;
+            }
+
+            Animation animation = cell.GetComponent<Animation>();
+            AnimationClip clip = animation != null ? animation.GetClip(CellShineSweepAnimationName) : null;
+            if (clip != null && clip.length > longestLength)
+            {
+                longestLength = clip.length;
+            }
+        }
+
+        return longestLength;
     }
 
     private bool IsCellComplete(SudukuCell cell)
@@ -1660,7 +1837,7 @@ public sealed class SudukuGameController : MonoBehaviour
     {
         for (int index = values.Count - 1; index > 0; index--)
         {
-            int randomIndex = Random.Range(0, index + 1);
+            int randomIndex = UnityEngine.Random.Range(0, index + 1);
             T temp = values[index];
             values[index] = values[randomIndex];
             values[randomIndex] = temp;
