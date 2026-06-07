@@ -48,6 +48,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private const string ObjectHomeName = "ObjectHome";
     private const string ButtonPlayName = "ButtonPlay";
     private const string IconBackName = "IconBack";
+    private const string NumberPanelName = "NumberPanel";
 
     [SerializeField] private SudukuBoardLayout boardLayout;
     [SerializeField, Range(20, 64)] private int holesToDig = 45;
@@ -63,6 +64,7 @@ public sealed class SudukuGameController : MonoBehaviour
 
     [Header("Number Colors")]
     [SerializeField] private Color wrongNumberColor = new Color(0.85f, 0.12f, 0.12f, 1f);
+    [SerializeField] private Color completedNumberPanelColor = new Color(0.55f, 0.55f, 0.55f, 1f);
 
     [Header("Note Mode")]
     [SerializeField] private Button noteModeButton;
@@ -99,6 +101,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private readonly bool[] completedRows = new bool[BoardLength];
     private readonly bool[] completedColumns = new bool[BoardLength];
     private readonly bool[] completedBoxes = new bool[BoardLength];
+    private readonly List<NumberPanelButton> numberPanelButtons = new List<NumberPanelButton>();
     private readonly List<GameObject> autoGameplayRootObjects = new List<GameObject>();
 
     private SudukuCell selectedCell;
@@ -118,6 +121,16 @@ public sealed class SudukuGameController : MonoBehaviour
     private Action puzzleCompletedHandler;
     private bool hasCompletedCurrentPuzzle;
     private bool completePuzzleAfterShineSweep;
+
+    private struct NumberPanelButton
+    {
+        public int Value;
+        public Button Button;
+        public CanvasGroup CanvasGroup;
+        public TMP_Text Label;
+        public Color EnabledLabelColor;
+        public Image ShadowImage;
+    }
 
     private struct MoveRecord
     {
@@ -727,6 +740,7 @@ public sealed class SudukuGameController : MonoBehaviour
 
             if (TryGetButtonNumber(button, out int value))
             {
+                CacheNumberPanelButton(button, value);
                 int capturedValue = value;
                 button.onClick.AddListener(() => InputNumber(capturedValue));
                 continue;
@@ -752,6 +766,8 @@ public sealed class SudukuGameController : MonoBehaviour
                 button.onClick.AddListener(UseHint);
             }
         }
+
+        RefreshNumberPanelDisplay();
     }
 
     private void PrepareGameFlow()
@@ -1296,6 +1312,108 @@ public sealed class SudukuGameController : MonoBehaviour
                 cell.SetBackgroundColor(GetCellBackgroundColor(cell));
             }
         }
+
+        RefreshNumberPanelDisplay();
+    }
+
+    private void CacheNumberPanelButton(Button button, int value)
+    {
+        Transform numberPanel = FindDeepParent(button.transform, NumberPanelName);
+        if (numberPanel == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < numberPanelButtons.Count; index++)
+        {
+            if (numberPanelButtons[index].Button == button)
+            {
+                return;
+            }
+        }
+
+        CanvasGroup canvasGroup = button.GetComponent<CanvasGroup>();
+        if (canvasGroup == null)
+        {
+            canvasGroup = button.gameObject.AddComponent<CanvasGroup>();
+        }
+
+        TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
+        numberPanelButtons.Add(new NumberPanelButton
+        {
+            Value = value,
+            Button = button,
+            CanvasGroup = canvasGroup,
+            Label = label,
+            EnabledLabelColor = label != null ? label.color : Color.white,
+            ShadowImage = FindNumberPanelItemImage(button.transform, numberPanel)
+        });
+    }
+
+    private void RefreshNumberPanelDisplay()
+    {
+        if (numberPanelButtons.Count == 0)
+        {
+            return;
+        }
+
+        int[] placedCounts = new int[BoardLength + 1];
+        for (int row = 0; row < BoardLength; row++)
+        {
+            for (int column = 0; column < BoardLength; column++)
+            {
+                SudukuCell cell = cells[row, column];
+                if (cell == null || cell.Value == EmptyValue || IsWrongValue(cell, cell.Value))
+                {
+                    continue;
+                }
+
+                placedCounts[cell.Value]++;
+            }
+        }
+
+        for (int index = numberPanelButtons.Count - 1; index >= 0; index--)
+        {
+            NumberPanelButton panelButton = numberPanelButtons[index];
+            if (panelButton.Button == null || panelButton.CanvasGroup == null)
+            {
+                numberPanelButtons.RemoveAt(index);
+                continue;
+            }
+
+            bool shouldEnable = placedCounts[panelButton.Value] < BoardLength;
+            panelButton.Button.interactable = shouldEnable;
+            panelButton.CanvasGroup.alpha = 1f;
+            panelButton.CanvasGroup.interactable = shouldEnable;
+            panelButton.CanvasGroup.blocksRaycasts = shouldEnable;
+
+            if (panelButton.Label != null)
+            {
+                panelButton.Label.color = shouldEnable ? panelButton.EnabledLabelColor : completedNumberPanelColor;
+            }
+
+            if (panelButton.ShadowImage != null)
+            {
+                panelButton.ShadowImage.enabled = shouldEnable;
+            }
+        }
+    }
+
+    private static Image FindNumberPanelItemImage(Transform buttonTransform, Transform numberPanel)
+    {
+        Transform item = FindDirectChildParent(buttonTransform, numberPanel);
+        return item != null ? item.GetComponent<Image>() : null;
+    }
+
+    private static Transform FindDirectChildParent(Transform child, Transform parent)
+    {
+        Transform current = child;
+        while (current != null && current.parent != parent)
+        {
+            current = current.parent;
+        }
+
+        return current != null && current.parent == parent ? current : null;
     }
 
     private void RefreshCompletedUnitCache()
@@ -1702,6 +1820,22 @@ public sealed class SudukuGameController : MonoBehaviour
     private static bool IsHintButton(Button button)
     {
         return button.name == HintButtonName;
+    }
+
+    private static Transform FindDeepParent(Transform child, string parentName)
+    {
+        Transform current = child;
+        while (current != null)
+        {
+            if (current.name == parentName)
+            {
+                return current;
+            }
+
+            current = current.parent;
+        }
+
+        return null;
     }
 
     private static Transform FindDeepChild(Transform parent, string childName)
