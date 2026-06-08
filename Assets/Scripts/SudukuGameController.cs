@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.UI;
 using Spine.Unity;
 
@@ -48,7 +49,9 @@ public sealed class SudukuGameController : MonoBehaviour
     private const string ObjectHomeName = "ObjectHome";
     private const string ButtonPlayName = "ButtonPlay";
     private const string IconBackName = "IconBack";
-    private const string NumberPanelName = "NumberPanel";
+    private const string NumericKeypadName = "NumericKeypad";
+    private const string NumberKeyButtonName = "Button";
+    private const string NumberKeyShadowName = "Shadow";
 
     [SerializeField] private SudukuBoardLayout boardLayout;
     [SerializeField, Range(20, 64)] private int holesToDig = 45;
@@ -64,7 +67,18 @@ public sealed class SudukuGameController : MonoBehaviour
 
     [Header("Number Colors")]
     [SerializeField] private Color wrongNumberColor = new Color(0.85f, 0.12f, 0.12f, 1f);
-    [SerializeField] private Color completedNumberPanelColor = new Color(0.55f, 0.55f, 0.55f, 1f);
+
+    [Header("Numeric Keypad")]
+    [SerializeField] private Transform numericKeypad;
+    [SerializeField] private GameObject numberKeyPrefab;
+    [SerializeField] private Color numberKeyNormalColor = new Color(0.4f, 0.4f, 0.4f, 1f);
+    [SerializeField] private Color numberKeyPressedColor = new Color(0.12f, 0.42f, 0.92f, 1f);
+    [SerializeField] private Color numberKeyDisabledColor = new Color(0.55f, 0.55f, 0.55f, 1f);
+    [SerializeField] private Color numberKeyButtonNormalColor = Color.white;
+    [SerializeField] private Color numberKeyButtonPressedColor = new Color(0.86f, 0.92f, 1f, 1f);
+    [SerializeField] private Color numberKeyButtonDisabledColor = new Color(1f, 1f, 1f, 0.5f);
+    [SerializeField, Range(0f, 2f)] private float numberKeyColorMultiplier = 1f;
+    [SerializeField, Range(0f, 1f)] private float numberKeyFadeDuration = 0.1f;
 
     [Header("Note Mode")]
     [SerializeField] private Button noteModeButton;
@@ -101,7 +115,7 @@ public sealed class SudukuGameController : MonoBehaviour
     private readonly bool[] completedRows = new bool[BoardLength];
     private readonly bool[] completedColumns = new bool[BoardLength];
     private readonly bool[] completedBoxes = new bool[BoardLength];
-    private readonly List<NumberPanelButton> numberPanelButtons = new List<NumberPanelButton>();
+    private readonly List<NumericKey> numericKeys = new List<NumericKey>();
     private readonly List<GameObject> autoGameplayRootObjects = new List<GameObject>();
 
     private SudukuCell selectedCell;
@@ -122,13 +136,11 @@ public sealed class SudukuGameController : MonoBehaviour
     private bool hasCompletedCurrentPuzzle;
     private bool completePuzzleAfterShineSweep;
 
-    private struct NumberPanelButton
+    private struct NumericKey
     {
         public int Value;
         public Button Button;
-        public CanvasGroup CanvasGroup;
         public TMP_Text Label;
-        public Color EnabledLabelColor;
         public Image ShadowImage;
     }
 
@@ -152,6 +164,7 @@ public sealed class SudukuGameController : MonoBehaviour
 
         PrepareCells(true);
         PrepareMathChallengePopup();
+        BuildNumericKeypad();
         BindCellButtons();
         BindControlButtons();
         PrepareGameFlow();
@@ -730,19 +743,16 @@ public sealed class SudukuGameController : MonoBehaviour
                 continue;
             }
 
+            if (numericKeypad != null && button.transform.IsChildOf(numericKeypad))
+            {
+                continue;
+            }
+
             if (button == noteModeButton || IsNoteModeButton(button))
             {
                 noteModeButton = button;
                 noteModeButton.onClick.AddListener(ToggleNoteMode);
                 RefreshNoteModeAnimation();
-                continue;
-            }
-
-            if (TryGetButtonNumber(button, out int value))
-            {
-                CacheNumberPanelButton(button, value);
-                int capturedValue = value;
-                button.onClick.AddListener(() => InputNumber(capturedValue));
                 continue;
             }
 
@@ -767,7 +777,7 @@ public sealed class SudukuGameController : MonoBehaviour
             }
         }
 
-        RefreshNumberPanelDisplay();
+        RefreshNumericKeypadDisplay();
     }
 
     private void PrepareGameFlow()
@@ -1313,46 +1323,99 @@ public sealed class SudukuGameController : MonoBehaviour
             }
         }
 
-        RefreshNumberPanelDisplay();
+        RefreshNumericKeypadDisplay();
     }
 
-    private void CacheNumberPanelButton(Button button, int value)
+    private void BuildNumericKeypad()
     {
-        Transform numberPanel = FindDeepParent(button.transform, NumberPanelName);
-        if (numberPanel == null)
+        numericKeys.Clear();
+        if (numericKeypad == null)
         {
+            Transform keypadTransform = FindSceneTransformByName(NumericKeypadName);
+            numericKeypad = keypadTransform;
+        }
+
+        if (numericKeypad == null)
+        {
+            Debug.LogWarning("SudukuGameController needs a NumericKeypad object to generate number keys.", this);
             return;
         }
 
-        for (int index = 0; index < numberPanelButtons.Count; index++)
+        if (numberKeyPrefab == null)
         {
-            if (numberPanelButtons[index].Button == button)
+            Debug.LogWarning("SudukuGameController needs a NumberKey prefab assigned to generate the numeric keypad.", this);
+            return;
+        }
+
+        ClearNumericKeypadChildren();
+        for (int value = 1; value <= BoardLength; value++)
+        {
+            CreateNumericKey(value);
+        }
+
+        RefreshNumericKeypadDisplay();
+    }
+
+    private void ClearNumericKeypadChildren()
+    {
+        for (int index = numericKeypad.childCount - 1; index >= 0; index--)
+        {
+            Transform childTransform = numericKeypad.GetChild(index);
+            if (!IsNumericKeypadGeneratedChild(childTransform))
             {
-                return;
+                continue;
             }
-        }
 
-        CanvasGroup canvasGroup = button.GetComponent<CanvasGroup>();
-        if (canvasGroup == null)
+            GameObject child = childTransform.gameObject;
+            child.SetActive(false);
+            Destroy(child);
+        }
+    }
+
+    private static bool IsNumericKeypadGeneratedChild(Transform child)
+    {
+        return int.TryParse(child.name, out int value) && value >= 1 && value <= BoardLength;
+    }
+
+    private void CreateNumericKey(int value)
+    {
+        GameObject keyObject = Instantiate(numberKeyPrefab, numericKeypad);
+        keyObject.name = value.ToString();
+
+        Button button = FindNumberKeyButton(keyObject.transform);
+        TMP_Text label = keyObject.GetComponentInChildren<TMP_Text>(true);
+        Image shadowImage = FindNumberKeyShadowImage(keyObject.transform);
+
+        if (label != null)
         {
-            canvasGroup = button.gameObject.AddComponent<CanvasGroup>();
+            label.text = value.ToString();
+            label.color = numberKeyNormalColor;
         }
 
-        TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
-        numberPanelButtons.Add(new NumberPanelButton
+        if (button == null)
+        {
+            Debug.LogWarning($"NumberKey prefab instance {keyObject.name} needs a Button child.", keyObject);
+            return;
+        }
+
+        ConfigureNumberKeyButtonColors(button);
+        button.onClick.RemoveAllListeners();
+        int capturedValue = value;
+        button.onClick.AddListener(() => InputNumber(capturedValue));
+        BindNumberKeyPressColor(button, label);
+
+        numericKeys.Add(new NumericKey
         {
             Value = value,
             Button = button,
-            CanvasGroup = canvasGroup,
             Label = label,
-            EnabledLabelColor = label != null ? label.color : Color.white,
-            ShadowImage = FindNumberPanelItemImage(button.transform, numberPanel)
+            ShadowImage = shadowImage
         });
     }
 
-    private void RefreshNumberPanelDisplay()
+    private void RefreshNumericKeypadDisplay()
     {
-        if (numberPanelButtons.Count == 0)
+        if (numericKeys.Count == 0)
         {
             return;
         }
@@ -1372,48 +1435,90 @@ public sealed class SudukuGameController : MonoBehaviour
             }
         }
 
-        for (int index = numberPanelButtons.Count - 1; index >= 0; index--)
+        for (int index = numericKeys.Count - 1; index >= 0; index--)
         {
-            NumberPanelButton panelButton = numberPanelButtons[index];
-            if (panelButton.Button == null || panelButton.CanvasGroup == null)
+            NumericKey key = numericKeys[index];
+            if (key.Button == null)
             {
-                numberPanelButtons.RemoveAt(index);
+                numericKeys.RemoveAt(index);
                 continue;
             }
 
-            bool shouldEnable = placedCounts[panelButton.Value] < BoardLength;
-            panelButton.Button.interactable = shouldEnable;
-            panelButton.CanvasGroup.alpha = 1f;
-            panelButton.CanvasGroup.interactable = shouldEnable;
-            panelButton.CanvasGroup.blocksRaycasts = shouldEnable;
+            bool shouldEnable = placedCounts[key.Value] < BoardLength;
+            key.Button.interactable = shouldEnable;
 
-            if (panelButton.Label != null)
+            if (key.Label != null)
             {
-                panelButton.Label.color = shouldEnable ? panelButton.EnabledLabelColor : completedNumberPanelColor;
+                key.Label.color = shouldEnable ? numberKeyNormalColor : numberKeyDisabledColor;
             }
 
-            if (panelButton.ShadowImage != null)
+            if (key.ShadowImage != null)
             {
-                panelButton.ShadowImage.enabled = shouldEnable;
+                key.ShadowImage.gameObject.SetActive(shouldEnable);
             }
         }
     }
 
-    private static Image FindNumberPanelItemImage(Transform buttonTransform, Transform numberPanel)
+    private static Button FindNumberKeyButton(Transform keyTransform)
     {
-        Transform item = FindDirectChildParent(buttonTransform, numberPanel);
-        return item != null ? item.GetComponent<Image>() : null;
+        Transform buttonTransform = FindDeepChild(keyTransform, NumberKeyButtonName);
+        Button button = buttonTransform != null ? buttonTransform.GetComponent<Button>() : null;
+        return button != null ? button : keyTransform.GetComponentInChildren<Button>(true);
     }
 
-    private static Transform FindDirectChildParent(Transform child, Transform parent)
+    private static Image FindNumberKeyShadowImage(Transform keyTransform)
     {
-        Transform current = child;
-        while (current != null && current.parent != parent)
+        Transform shadowTransform = FindDeepChild(keyTransform, NumberKeyShadowName);
+        return shadowTransform != null ? shadowTransform.GetComponent<Image>() : null;
+    }
+
+    private void ConfigureNumberKeyButtonColors(Button button)
+    {
+        ColorBlock colors = button.colors;
+        colors.normalColor = numberKeyButtonNormalColor;
+        colors.highlightedColor = numberKeyButtonNormalColor;
+        colors.selectedColor = numberKeyButtonNormalColor;
+        colors.pressedColor = numberKeyButtonPressedColor;
+        colors.disabledColor = numberKeyButtonDisabledColor;
+        colors.colorMultiplier = numberKeyColorMultiplier;
+        colors.fadeDuration = numberKeyFadeDuration;
+        button.colors = colors;
+    }
+
+    private void BindNumberKeyPressColor(Button button, TMP_Text label)
+    {
+        if (label == null)
         {
-            current = current.parent;
+            return;
         }
 
-        return current != null && current.parent == parent ? current : null;
+        EventTrigger trigger = button.GetComponent<EventTrigger>();
+        if (trigger == null)
+        {
+            trigger = button.gameObject.AddComponent<EventTrigger>();
+        }
+
+        AddNumberKeyEvent(trigger, EventTriggerType.PointerDown, _ =>
+        {
+            if (button.interactable)
+            {
+                label.color = numberKeyPressedColor;
+            }
+        });
+
+        AddNumberKeyEvent(trigger, EventTriggerType.PointerUp, _ => RefreshNumericKeypadDisplay());
+        AddNumberKeyEvent(trigger, EventTriggerType.PointerExit, _ => RefreshNumericKeypadDisplay());
+        AddNumberKeyEvent(trigger, EventTriggerType.Cancel, _ => RefreshNumericKeypadDisplay());
+    }
+
+    private static void AddNumberKeyEvent(EventTrigger trigger, EventTriggerType eventType, UnityEngine.Events.UnityAction<BaseEventData> callback)
+    {
+        EventTrigger.Entry entry = new EventTrigger.Entry
+        {
+            eventID = eventType
+        };
+        entry.callback.AddListener(callback);
+        trigger.triggers.Add(entry);
     }
 
     private void RefreshCompletedUnitCache()
@@ -1795,13 +1900,6 @@ public sealed class SudukuGameController : MonoBehaviour
         return IsInsideBoard(row, column);
     }
 
-    private static bool TryGetButtonNumber(Button button, out int value)
-    {
-        value = EmptyValue;
-        TMP_Text text = button.GetComponentInChildren<TMP_Text>(true);
-        return text != null && int.TryParse(text.text, out value) && value >= 1 && value <= BoardLength;
-    }
-
     private static bool IsReturnButton(Button button)
     {
         return button.name == ReturnButtonName;
@@ -1820,22 +1918,6 @@ public sealed class SudukuGameController : MonoBehaviour
     private static bool IsHintButton(Button button)
     {
         return button.name == HintButtonName;
-    }
-
-    private static Transform FindDeepParent(Transform child, string parentName)
-    {
-        Transform current = child;
-        while (current != null)
-        {
-            if (current.name == parentName)
-            {
-                return current;
-            }
-
-            current = current.parent;
-        }
-
-        return null;
     }
 
     private static Transform FindDeepChild(Transform parent, string childName)

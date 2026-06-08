@@ -1154,7 +1154,16 @@ MonoBehaviour:
   backButton: {fileID: 0}
   gameplayRootObjects: []
   wrongNumberColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
-  completedNumberPanelColor: {r: 0.84705883, g: 0.12156863, b: 0.12156863, a: 1}
+  numericKeypad: {fileID: 1306430991}
+  numberKeyPrefab: {fileID: 6676705121135352848, guid: cdef21d9a480240918ecf919d6931ed1, type: 3}
+  numberKeyNormalColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
+  numberKeyPressedColor: {r: 0.12, g: 0.42, b: 0.92, a: 1}
+  numberKeyDisabledColor: {r: 0.55, g: 0.55, b: 0.55, a: 1}
+  numberKeyButtonNormalColor: {r: 1, g: 1, b: 1, a: 1}
+  numberKeyButtonPressedColor: {r: 0.86, g: 0.92, b: 1, a: 1}
+  numberKeyButtonDisabledColor: {r: 1, g: 1, b: 1, a: 0.5}
+  numberKeyColorMultiplier: 1
+  numberKeyFadeDuration: 0.1
   noteModeButton: {fileID: 0}
   noteModeSkeletonGraphic: {fileID: 0}
   noteModeSkeletonAnimation: {fileID: 0}
@@ -3467,7 +3476,7 @@ GameObject:
   - component: {fileID: 1306430998}
   - component: {fileID: 1306430997}
   m_Layer: 5
-  m_Name: NumberPanel
+  m_Name: NumericKeypad
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
