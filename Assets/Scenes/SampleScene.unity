@@ -1156,12 +1156,12 @@ MonoBehaviour:
   wrongNumberColor: {r: 0.85, g: 0.12, b: 0.12, a: 1}
   numericKeypad: {fileID: 1306430991}
   numberKeyPrefab: {fileID: 6676705121135352848, guid: cdef21d9a480240918ecf919d6931ed1, type: 3}
-  numberKeyNormalColor: {r: 0.4, g: 0.4, b: 0.4, a: 1}
+  numberKeyNormalColor: {r: 0.16078432, g: 0.16078432, b: 0.16078432, a: 1}
   numberKeyPressedColor: {r: 0.12, g: 0.42, b: 0.92, a: 1}
-  numberKeyDisabledColor: {r: 0.55, g: 0.55, b: 0.55, a: 1}
-  numberKeyButtonNormalColor: {r: 1, g: 1, b: 1, a: 1}
-  numberKeyButtonPressedColor: {r: 0.86, g: 0.92, b: 1, a: 1}
-  numberKeyButtonDisabledColor: {r: 1, g: 1, b: 1, a: 0.5}
+  numberKeyDisabledColor: {r: 0.9056604, g: 0.9056604, b: 0.9056604, a: 1}
+  numberKeyButtonNormalColor: {r: 0.9647059, g: 0.9647059, b: 0.9647059, a: 1}
+  numberKeyButtonPressedColor: {r: 0.76161444, g: 0.8633707, b: 0.990566, a: 1}
+  numberKeyButtonDisabledColor: {r: 0.9716981, g: 0.9716981, b: 0.9716981, a: 1}
   numberKeyColorMultiplier: 1
   numberKeyFadeDuration: 0.1
   noteModeButton: {fileID: 0}
