@@ -874,11 +874,12 @@ public sealed class SudokuAppController : MonoBehaviour
     private static void AddGridLayout(GameObject target, Vector2 cellSize, Vector2 spacing, int constraintCount)
     {
         GridLayoutGroup grid = target.GetComponent<GridLayoutGroup>();
-        if (grid == null)
+        if (grid != null)
         {
-            grid = target.AddComponent<GridLayoutGroup>();
+            return;
         }
 
+        grid = target.AddComponent<GridLayoutGroup>();
         grid.cellSize = cellSize;
         grid.spacing = spacing;
         grid.childAlignment = TextAnchor.MiddleCenter;

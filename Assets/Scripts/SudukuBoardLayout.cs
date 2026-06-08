@@ -14,11 +14,11 @@ public sealed class SudukuBoardLayout : MonoBehaviour
     [SerializeField] private bool rebuildWhenValidated;
 
     [Header("Board Size")]
-    [SerializeField, Min(1f)] private float boardSize = 671f;
-    [SerializeField, Min(1f)] private float cellSize = 73f;
-    [SerializeField, Min(0f)] private float thinLineSize = 1f;
-    [SerializeField, Min(0f)] private float thickLineSize = 2f;
-    [SerializeField, Min(0f)] private float outerLineSize = 2f;
+    [SerializeField, Min(1f)] private float boardSize = 1000f;
+    [SerializeField, Min(1f)] private float cellSize = 108f;
+    [SerializeField, Min(0f)] private float thinLineSize = 2f;
+    [SerializeField, Min(0f)] private float thickLineSize = 4f;
+    [SerializeField, Min(0f)] private float outerLineSize = 4f;
 
     [Header("Colors")]
     [SerializeField] private Color thinLineColor = new Color(0.72f, 0.72f, 0.72f, 1f);

@@ -133,7 +133,7 @@ MonoBehaviour:
   m_ChildAlignment: 4
   m_StartCorner: 0
   m_StartAxis: 0
-  m_CellSize: {x: 90, y: 90}
+  m_CellSize: {x: 130, y: 130}
   m_Spacing: {x: 18, y: 18}
   m_Constraint: 1
   m_ConstraintCount: 5

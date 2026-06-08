@@ -14,6 +14,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 1866678675709299328, guid: 685d34af3851e4111977d243ac1ec67d, type: 3}
       propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 6099180383524986567, guid: 685d34af3851e4111977d243ac1ec67d, type: 3}
+      propertyPath: m_IsActive
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 8817522910955416960, guid: 685d34af3851e4111977d243ac1ec67d, type: 3}
@@ -42,11 +46,11 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 8817522910955416960, guid: 685d34af3851e4111977d243ac1ec67d, type: 3}
       propertyPath: m_SizeDelta.x
-      value: 750
+      value: 1080
       objectReference: {fileID: 0}
     - target: {fileID: 8817522910955416960, guid: 685d34af3851e4111977d243ac1ec67d, type: 3}
       propertyPath: m_SizeDelta.y
-      value: 1334
+      value: 1920
       objectReference: {fileID: 0}
     - target: {fileID: 8817522910955416960, guid: 685d34af3851e4111977d243ac1ec67d, type: 3}
       propertyPath: m_LocalPosition.x
@@ -129,7 +133,7 @@ MonoBehaviour:
   m_ChildAlignment: 4
   m_StartCorner: 0
   m_StartAxis: 0
-  m_CellSize: {x: 90, y: 90}
+  m_CellSize: {x: 130, y: 130}
   m_Spacing: {x: 18, y: 18}
   m_Constraint: 1
   m_ConstraintCount: 5
