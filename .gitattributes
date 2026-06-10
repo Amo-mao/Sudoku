@@ -37,6 +37,9 @@
 *.txt text eol=lf
 *.md text eol=lf
 
+# Third-party plugin sources are kept as imported to avoid line-ending churn.
+Assets/UnitySpine/Spine/** -text
+
 # Binary assets
 *.png binary
 *.jpg binary
