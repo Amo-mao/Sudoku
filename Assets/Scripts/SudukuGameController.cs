@@ -269,6 +269,96 @@ public sealed class SudukuGameController : MonoBehaviour
         RefreshBoardState();
     }
 
+    public void LoadPuzzleProgress(SudokuPuzzleData puzzleData, SudokuLevelProgressData progressData)
+    {
+        LoadPuzzle(puzzleData);
+
+        if (progressData == null || progressData.Values == null)
+        {
+            return;
+        }
+
+        int expectedLength = BoardLength * BoardLength;
+        if (progressData.Values.Length < expectedLength)
+        {
+            return;
+        }
+
+        for (int row = 0; row < BoardLength; row++)
+        {
+            for (int column = 0; column < BoardLength; column++)
+            {
+                SudukuCell cell = cells[row, column];
+                if (cell == null || cell.IsFixed)
+                {
+                    continue;
+                }
+
+                int index = GetProgressIndex(row, column);
+                int value = Mathf.Clamp(progressData.Values[index], EmptyValue, BoardLength);
+                bool isHint = progressData.Hints != null && index < progressData.Hints.Length && progressData.Hints[index];
+                cell.SetValue(value, false, IsWrongValue(cell, value), isHint);
+                if (value == EmptyValue && progressData.Notes != null && index < progressData.Notes.Length)
+                {
+                    cell.SetNotesMask(progressData.Notes[index]);
+                }
+            }
+        }
+
+        remainingHintCount = Mathf.Clamp(progressData.RemainingHintCount, 0, initialHintCount);
+        consecutiveWrongPlacements = Mathf.Max(0, progressData.ConsecutiveWrongPlacements);
+        RefreshCompletedUnitCache();
+        history.Clear();
+        RefreshHintCountDisplay();
+        SetNoteMode(false);
+        SelectCell(null);
+        RefreshBoardState();
+    }
+
+    public bool TryCaptureProgress(SudokuPuzzleData puzzleData, out SudokuLevelProgressData progressData)
+    {
+        progressData = null;
+
+        if (puzzleData == null || !IsProgressCapturableState() || hasCompletedCurrentPuzzle)
+        {
+            return false;
+        }
+
+        progressData = new SudokuLevelProgressData
+        {
+            Values = new int[BoardLength * BoardLength],
+            Hints = new bool[BoardLength * BoardLength],
+            Notes = new int[BoardLength * BoardLength],
+            RemainingHintCount = remainingHintCount,
+            ConsecutiveWrongPlacements = consecutiveWrongPlacements
+        };
+
+        bool hasProgress = remainingHintCount != initialHintCount || consecutiveWrongPlacements > 0;
+        for (int row = 0; row < BoardLength; row++)
+        {
+            for (int column = 0; column < BoardLength; column++)
+            {
+                SudukuCell cell = cells[row, column];
+                if (cell == null)
+                {
+                    continue;
+                }
+
+                int index = GetProgressIndex(row, column);
+                progressData.Values[index] = cell.Value;
+                progressData.Hints[index] = cell.IsHint;
+                progressData.Notes[index] = cell.GetNotesMask();
+
+                if (!cell.IsFixed && (cell.Value != puzzleData.GetPuzzleValue(row, column) || cell.IsHint || progressData.Notes[index] != 0))
+                {
+                    hasProgress = true;
+                }
+            }
+        }
+
+        return hasProgress;
+    }
+
     public void SetGameBackHandler(Action handler)
     {
         gameBackHandler = handler;
@@ -310,6 +400,11 @@ public sealed class SudukuGameController : MonoBehaviour
     private bool IsPlayingState()
     {
         return currentState == SudukuGameState.Playing;
+    }
+
+    private bool IsProgressCapturableState()
+    {
+        return currentState == SudukuGameState.Playing || currentState == SudukuGameState.MathChallenge;
     }
 
     [ContextMenu("Generate New Puzzle")]
@@ -932,6 +1027,8 @@ public sealed class SudukuGameController : MonoBehaviour
         return target.name == "Daily_10_Levels" ||
                target.name == "ClassicDifficultyPage" ||
                target.name == "Object_WellDone" ||
+               target.name == "Daily_Card" ||
+               target.name == "Me_Card" ||
                target.name.StartsWith("Levels_", StringComparison.Ordinal);
     }
 
@@ -1797,6 +1894,11 @@ public sealed class SudukuGameController : MonoBehaviour
     private static int GetCellDistance(SudukuCell centerCell, SudukuCell cell)
     {
         return Mathf.Abs(cell.Row - centerCell.Row) + Mathf.Abs(cell.Column - centerCell.Column);
+    }
+
+    private static int GetProgressIndex(int row, int column)
+    {
+        return row * BoardLength + column;
     }
 
     private void ApplyPuzzle()

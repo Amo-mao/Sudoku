@@ -136,6 +136,31 @@ public sealed class SudukuCell : MonoBehaviour
         RefreshNotes();
     }
 
+    public int GetNotesMask()
+    {
+        int mask = 0;
+        for (int value = 1; value <= NoteCount; value++)
+        {
+            if (notes[value])
+            {
+                mask |= 1 << (value - 1);
+            }
+        }
+
+        return mask;
+    }
+
+    public void SetNotesMask(int mask)
+    {
+        ConfigureNotesLayout();
+        for (int value = 1; value <= NoteCount; value++)
+        {
+            notes[value] = (mask & (1 << (value - 1))) != 0;
+        }
+
+        RefreshNotes();
+    }
+
     public void ClearNotes()
     {
         for (int value = 1; value <= NoteCount; value++)

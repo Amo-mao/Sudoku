@@ -34,3 +34,13 @@ public sealed class SudokuPuzzleData
         return row * BoardLength + column;
     }
 }
+
+[Serializable]
+public sealed class SudokuLevelProgressData
+{
+    public int[] Values = new int[SudokuPuzzleData.BoardLength * SudokuPuzzleData.BoardLength];
+    public bool[] Hints = new bool[SudokuPuzzleData.BoardLength * SudokuPuzzleData.BoardLength];
+    public int[] Notes = new int[SudokuPuzzleData.BoardLength * SudokuPuzzleData.BoardLength];
+    public int RemainingHintCount;
+    public int ConsecutiveWrongPlacements;
+}

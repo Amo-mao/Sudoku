@@ -695,6 +695,11 @@ MonoBehaviour:
   dailyLevelsPage: {fileID: 0}
   classicDifficultyPage: {fileID: 0}
   wellDonePopup: {fileID: 0}
+  resumeProgressPopup: {fileID: 0}
+  resumeProgressPopupPrefab: {fileID: 2400275239485596749, guid: 7f8e84519cbeb884dbff0d468625703e, type: 3}
+  bottomNav: {fileID: 0}
+  dailyCardPage: {fileID: 552116516749902671, guid: d0c93692894ea8a43a71ebd2ce55779c, type: 3}
+  meCardPage: {fileID: 7406775676343225903, guid: b4f957f76f91e5e45978abed15496bf9, type: 3}
   btnLevelPrefab: {fileID: 7955442441277852895, guid: 3315582e2628f4b4bbd058b23f0ca0bf, type: 3}
   classicLevelPages:
   - {fileID: 4820938549924624563, guid: 938ebd6501210492c8bcc36824e2dcc6, type: 3}

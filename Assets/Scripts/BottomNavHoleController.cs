@@ -54,6 +54,7 @@ public class BottomNavHoleController : MonoBehaviour
 
     private Material runtimeMaterial;
     private Vector2 currentHoleCenter;
+    private SudokuAppController appController;
 
     private RectTransform[] tabs;
     private Image[] icons;
@@ -91,6 +92,7 @@ public class BottomNavHoleController : MonoBehaviour
 
         runtimeMaterial = Instantiate(barBg.material);
         barBg.material = runtimeMaterial;
+        appController = FindAppController();
     }
 
     private void Start()
@@ -101,16 +103,19 @@ public class BottomNavHoleController : MonoBehaviour
     public void SelectHome()
     {
         SelectTab(0, false);
+        GetAppController()?.ShowHome();
     }
 
     public void SelectStats()
     {
         SelectTab(1, false);
+        GetAppController()?.ShowDailyCard();
     }
 
     public void SelectProfile()
     {
         SelectTab(2, false);
+        GetAppController()?.ShowMeCard();
     }
 
     public void SelectTab(int index, bool instant = false)
@@ -304,6 +309,22 @@ public class BottomNavHoleController : MonoBehaviour
 
         Image childIcon = tab.GetComponentInChildren<Image>(true);
         return childIcon != null ? childIcon.rectTransform : null;
+    }
+
+    private SudokuAppController GetAppController()
+    {
+        if (appController == null)
+        {
+            appController = FindAppController();
+        }
+
+        return appController;
+    }
+
+    private static SudokuAppController FindAppController()
+    {
+        SudokuAppController[] controllers = FindObjectsByType<SudokuAppController>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        return controllers.Length > 0 ? controllers[0] : null;
     }
 
     private void UpdateIconPosition(int selectedIndex, bool instant)

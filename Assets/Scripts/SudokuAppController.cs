@@ -29,12 +29,24 @@ public sealed class SudokuAppController : MonoBehaviour
     private const int ClassicLevelCount = 20;
     private const int DailyRefreshHour = 8;
     private const string RuntimeGeneratedPrefix = "Generated_";
+    private const string BottomNavName = "BottomNav";
+    private const string DailyCardName = "Daily_Card";
+    private const string MeCardName = "Me_Card";
+    private const string ResumeProgressPopupName = "ResumeProgressPopup";
+    private const string ButtonNewName = "Button_New";
+    private const string ButtonContinueName = "Button_Continue";
+    private const string LevelProgressPrefix = "Sudoku_LevelProgress_";
 
     [SerializeField] private SudukuGameController gameController;
     [SerializeField] private GameObject objectHome;
     [SerializeField] private GameObject dailyLevelsPage;
     [SerializeField] private GameObject classicDifficultyPage;
     [SerializeField] private GameObject wellDonePopup;
+    [SerializeField] private GameObject resumeProgressPopup;
+    [SerializeField] private GameObject resumeProgressPopupPrefab;
+    [SerializeField] private GameObject bottomNav;
+    [SerializeField] private GameObject dailyCardPage;
+    [SerializeField] private GameObject meCardPage;
     [SerializeField] private GameObject btnLevelPrefab;
     [SerializeField] private GameObject[] classicLevelPages;
 
@@ -53,10 +65,29 @@ public sealed class SudokuAppController : MonoBehaviour
     private int activeLevelIndex = -1;
     private int activeLevelCount;
     private string activeProgressKey;
+    private string activeLevelSaveKey;
     private SudokuPuzzleSet activePuzzleSet;
+    private SudokuPuzzleData activePuzzleData;
     private Animation wellDoneAnimation;
     private Button wellDoneNextButton;
     private Button wellDoneQuitButton;
+    private Button resumeNewButton;
+    private Button resumeContinueButton;
+    private PendingPuzzleStart pendingPuzzleStart;
+    private bool shouldShowBottomNav;
+
+    private sealed class PendingPuzzleStart
+    {
+        public SudokuGameMode Mode;
+        public SudokuDifficulty Difficulty;
+        public int LevelIndex;
+        public int LevelCount;
+        public string ProgressKey;
+        public SudokuPuzzleSet PuzzleSet;
+        public SudokuPuzzleData PuzzleData;
+        public string SaveKey;
+        public SudokuLevelProgressData SavedProgress;
+    }
 
     private void Awake()
     {
@@ -68,6 +99,7 @@ public sealed class SudokuAppController : MonoBehaviour
         BindClassicDifficultyPage();
         BindClassicLevelPages();
         BindWellDonePopup();
+        BindResumeProgressPopup();
 
         if (gameController != null)
         {
@@ -82,40 +114,79 @@ public sealed class SudokuAppController : MonoBehaviour
         ShowHome();
     }
 
+    private void LateUpdate()
+    {
+        SetBottomNavVisible(shouldShowBottomNav);
+    }
+
     public void ShowHome()
     {
+        SaveActivePuzzleProgressIfNeeded();
         activeLevelSelectPage = null;
         HideWellDonePopup();
+        HideResumeProgressPopup();
         HideGameplay();
         ShowOnly(objectHome);
+        ShowBottomNavForCurrentPage(true);
+    }
+
+    public void ShowDailyCard()
+    {
+        SaveActivePuzzleProgressIfNeeded();
+        activeLevelSelectPage = null;
+        HideWellDonePopup();
+        HideResumeProgressPopup();
+        HideGameplay();
+        ShowOnly(dailyCardPage);
+        ShowBottomNavForCurrentPage(true);
+    }
+
+    public void ShowMeCard()
+    {
+        SaveActivePuzzleProgressIfNeeded();
+        activeLevelSelectPage = null;
+        HideWellDonePopup();
+        HideResumeProgressPopup();
+        HideGameplay();
+        ShowOnly(meCardPage);
+        ShowBottomNavForCurrentPage(true);
     }
 
     public void ShowDailyLevels()
     {
+        SaveActivePuzzleProgressIfNeeded();
         HideWellDonePopup();
+        HideResumeProgressPopup();
         HideGameplay();
         EnsureDailyLevels();
         activeLevelSelectPage = dailyLevelsPage;
         ShowOnly(dailyLevelsPage);
         StartRefreshCountdown();
+        ShowBottomNavForCurrentPage(false);
     }
 
     public void ShowClassicDifficulty()
     {
+        SaveActivePuzzleProgressIfNeeded();
         activeLevelSelectPage = null;
         HideWellDonePopup();
+        HideResumeProgressPopup();
         HideGameplay();
         ShowOnly(classicDifficultyPage);
+        ShowBottomNavForCurrentPage(false);
     }
 
     public void ShowClassicLevels(SudokuDifficulty difficulty)
     {
+        SaveActivePuzzleProgressIfNeeded();
         HideWellDonePopup();
+        HideResumeProgressPopup();
         HideGameplay();
         EnsureClassicLevels(difficulty);
         GameObject page = classicPages[difficulty];
         activeLevelSelectPage = page;
         ShowOnly(page);
+        ShowBottomNavForCurrentPage(false);
     }
 
     private void StartDailyLevel(int index)
@@ -145,22 +216,73 @@ public sealed class SudokuAppController : MonoBehaviour
 
     private void StartPuzzle(SudokuGameMode mode, SudokuDifficulty difficulty, int levelIndex, int levelCount, string progressKey, SudokuPuzzleSet puzzleSet, SudokuPuzzleData puzzleData)
     {
+        string saveKey = GetLevelProgressKey(mode, difficulty, puzzleSet, levelIndex);
+        if (!TryLoadLevelProgress(saveKey, out SudokuLevelProgressData savedProgress))
+        {
+            string legacySaveKey = GetLegacyLevelProgressKey(mode, difficulty, levelIndex);
+            if (legacySaveKey != saveKey && TryLoadLevelProgress(legacySaveKey, out savedProgress))
+            {
+                PlayerPrefs.SetString(saveKey, PlayerPrefs.GetString(legacySaveKey));
+                PlayerPrefs.DeleteKey(legacySaveKey);
+                PlayerPrefs.Save();
+                Debug.Log("Migrated sudoku level progress from " + legacySaveKey + " to " + saveKey, this);
+            }
+        }
+
+        if (savedProgress != null)
+        {
+            pendingPuzzleStart = CreatePendingPuzzleStart(mode, difficulty, levelIndex, levelCount, progressKey, puzzleSet, puzzleData, saveKey, savedProgress);
+            StartPuzzleInternal(mode, difficulty, levelIndex, levelCount, progressKey, puzzleSet, puzzleData, saveKey, null);
+            ShowResumeProgressPopup();
+            ShowBottomNavForCurrentPage(false);
+            return;
+        }
+
+        StartPuzzleInternal(mode, difficulty, levelIndex, levelCount, progressKey, puzzleSet, puzzleData, saveKey, null);
+    }
+
+    private void StartPuzzleInternal(
+        SudokuGameMode mode,
+        SudokuDifficulty difficulty,
+        int levelIndex,
+        int levelCount,
+        string progressKey,
+        SudokuPuzzleSet puzzleSet,
+        SudokuPuzzleData puzzleData,
+        string saveKey,
+        SudokuLevelProgressData progressData)
+    {
         activeGameMode = mode;
         activeDifficulty = difficulty;
         activeLevelIndex = levelIndex;
         activeLevelCount = levelCount;
         activeProgressKey = progressKey;
+        activeLevelSaveKey = saveKey;
         activePuzzleSet = puzzleSet;
+        activePuzzleData = puzzleData;
         HideWellDonePopup();
+        HideResumeProgressPopup();
         HideAllMenuPages();
         if (gameController != null)
         {
-            gameController.LoadPuzzle(puzzleData);
+            if (progressData != null)
+            {
+                gameController.LoadPuzzleProgress(puzzleData, progressData);
+            }
+            else
+            {
+                gameController.LoadPuzzle(puzzleData);
+            }
         }
+
+        HideResumeProgressPopup();
+        ShowBottomNavForCurrentPage(false);
     }
 
     private void ReturnToActiveLevelSelectPage()
     {
+        SaveActivePuzzleProgressIfNeeded();
+
         if (activeLevelSelectPage == dailyLevelsPage)
         {
             ShowDailyLevels();
@@ -171,6 +293,7 @@ public sealed class SudokuAppController : MonoBehaviour
         {
             HideGameplay();
             ShowOnly(activeLevelSelectPage);
+            ShowBottomNavForCurrentPage(false);
             return;
         }
 
@@ -185,6 +308,7 @@ public sealed class SudokuAppController : MonoBehaviour
         }
 
         UnlockNextLevel(activeProgressKey, activeLevelIndex, activeLevelCount);
+        DeleteLevelProgress(activeLevelSaveKey);
 
         if (activeGameMode == SudokuGameMode.Daily)
         {
@@ -261,7 +385,42 @@ public sealed class SudokuAppController : MonoBehaviour
             wellDonePopup = EnsureScenePageInstance(wellDonePopup, "Object_WellDone");
         }
 
+        if (resumeProgressPopup == null)
+        {
+            Transform popup = FindSceneTransformByName(ResumeProgressPopupName);
+            resumeProgressPopup = popup != null ? popup.gameObject : null;
+        }
+
+        if (resumeProgressPopup == null && resumeProgressPopupPrefab != null)
+        {
+            resumeProgressPopup = EnsureScenePageInstance(resumeProgressPopupPrefab, ResumeProgressPopupName);
+        }
+        else if (resumeProgressPopup != null)
+        {
+            resumeProgressPopup = EnsureScenePageInstance(resumeProgressPopup, ResumeProgressPopupName);
+        }
+
+        if (bottomNav == null)
+        {
+            Transform nav = FindSceneTransformByName(BottomNavName);
+            bottomNav = nav != null ? nav.gameObject : null;
+        }
+
+        dailyCardPage = ResolvePage(dailyCardPage, DailyCardName);
+        meCardPage = ResolvePage(meCardPage, MeCardName);
+
         CacheClassicLevelPages();
+    }
+
+    private GameObject ResolvePage(GameObject page, string pageName)
+    {
+        if (page == null)
+        {
+            Transform scenePage = FindSceneTransformByName(pageName);
+            return scenePage != null ? scenePage.gameObject : null;
+        }
+
+        return EnsureScenePageInstance(page, pageName);
     }
 
     private void CacheClassicLevelPages()
@@ -296,6 +455,19 @@ public sealed class SudokuAppController : MonoBehaviour
                 classicPages[difficulty] = page.gameObject;
             }
         }
+    }
+
+    private void OnApplicationPause(bool pauseStatus)
+    {
+        if (pauseStatus)
+        {
+            SaveActivePuzzleProgressIfNeeded();
+        }
+    }
+
+    private void OnApplicationQuit()
+    {
+        SaveActivePuzzleProgressIfNeeded();
     }
 
     private GameObject EnsureScenePageInstance(GameObject page, string pageName)
@@ -372,6 +544,8 @@ public sealed class SudokuAppController : MonoBehaviour
     {
         menuPages.Clear();
         AddPage(objectHome);
+        AddPage(dailyCardPage);
+        AddPage(meCardPage);
         AddPage(dailyLevelsPage);
         AddPage(classicDifficultyPage);
         foreach (GameObject page in classicPages.Values)
@@ -486,6 +660,136 @@ public sealed class SudokuAppController : MonoBehaviour
         HideWellDonePopup();
     }
 
+    private void BindResumeProgressPopup()
+    {
+        if (!EnsureResumeProgressPopupReference())
+        {
+            return;
+        }
+
+        resumeNewButton = GetOrCreateButton(FindDeepChild(resumeProgressPopup.transform, ButtonNewName));
+        resumeContinueButton = GetOrCreateButton(FindDeepChild(resumeProgressPopup.transform, ButtonContinueName));
+
+        if (resumeNewButton != null)
+        {
+            resumeNewButton.onClick.RemoveListener(HandleResumeNew);
+            resumeNewButton.onClick.AddListener(HandleResumeNew);
+        }
+
+        if (resumeContinueButton != null)
+        {
+            resumeContinueButton.onClick.RemoveListener(HandleResumeContinue);
+            resumeContinueButton.onClick.AddListener(HandleResumeContinue);
+        }
+
+        HideResumeProgressPopup();
+    }
+
+    private bool EnsureResumeProgressPopupReference()
+    {
+        if (resumeProgressPopup == null)
+        {
+            Transform popup = FindSceneTransformByName(ResumeProgressPopupName);
+            resumeProgressPopup = popup != null ? popup.gameObject : null;
+        }
+
+        if (resumeProgressPopup == null && resumeProgressPopupPrefab != null)
+        {
+            resumeProgressPopup = EnsureScenePageInstance(resumeProgressPopupPrefab, ResumeProgressPopupName);
+        }
+        else if (resumeProgressPopup != null)
+        {
+            resumeProgressPopup = EnsureScenePageInstance(resumeProgressPopup, ResumeProgressPopupName);
+        }
+
+        return resumeProgressPopup != null;
+    }
+
+    private void ShowResumeProgressPopup()
+    {
+        if (!EnsureResumeProgressPopupReference())
+        {
+            Debug.LogWarning("ResumeProgressPopup is missing. Continuing saved sudoku progress instead of deleting it.", this);
+            HandleResumeContinue();
+            return;
+        }
+
+        if (resumeNewButton == null || resumeContinueButton == null)
+        {
+            BindResumeProgressPopup();
+        }
+
+        HideWellDonePopup();
+        resumeProgressPopup.SetActive(true);
+        resumeProgressPopup.transform.SetAsLastSibling();
+    }
+
+    private void HideResumeProgressPopup()
+    {
+        if (resumeProgressPopup != null)
+        {
+            resumeProgressPopup.SetActive(false);
+        }
+
+        Transform[] transforms = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (Transform foundTransform in transforms)
+        {
+            if (foundTransform.name == ResumeProgressPopupName)
+            {
+                foundTransform.gameObject.SetActive(false);
+            }
+        }
+    }
+
+    private void HandleResumeNew()
+    {
+        if (pendingPuzzleStart == null)
+        {
+            HideResumeProgressPopup();
+            return;
+        }
+
+        PendingPuzzleStart pending = pendingPuzzleStart;
+        pendingPuzzleStart = null;
+        Debug.Log("Starting a new sudoku level and deleting saved progress: " + pending.SaveKey, this);
+        HideResumeProgressPopup();
+        DeleteLevelProgress(pending.SaveKey);
+        StartPuzzleInternal(
+            pending.Mode,
+            pending.Difficulty,
+            pending.LevelIndex,
+            pending.LevelCount,
+            pending.ProgressKey,
+            pending.PuzzleSet,
+            pending.PuzzleData,
+            pending.SaveKey,
+            null);
+    }
+
+    private void HandleResumeContinue()
+    {
+        if (pendingPuzzleStart == null)
+        {
+            HideResumeProgressPopup();
+            return;
+        }
+
+        PendingPuzzleStart pending = pendingPuzzleStart;
+        pendingPuzzleStart = null;
+        Debug.Log("Continuing saved sudoku progress: " + pending.SaveKey, this);
+        HideResumeProgressPopup();
+        StartPuzzleInternal(
+            pending.Mode,
+            pending.Difficulty,
+            pending.LevelIndex,
+            pending.LevelCount,
+            pending.ProgressKey,
+            pending.PuzzleSet,
+            pending.PuzzleData,
+            pending.SaveKey,
+            pending.SavedProgress);
+    }
+
     private void ShowWellDonePopup()
     {
         if (wellDonePopup == null)
@@ -575,6 +879,13 @@ public sealed class SudokuAppController : MonoBehaviour
             SudokuPuzzleSet loaded = JsonUtility.FromJson<SudokuPuzzleSet>(json);
             if (loaded != null && loaded.Puzzles != null && loaded.Puzzles.Length == count)
             {
+                if (string.IsNullOrEmpty(loaded.Key))
+                {
+                    loaded.Key = key;
+                    PlayerPrefs.SetString(storageKey, JsonUtility.ToJson(loaded));
+                    PlayerPrefs.Save();
+                }
+
                 return loaded;
             }
         }
@@ -594,6 +905,100 @@ public sealed class SudokuAppController : MonoBehaviour
         PlayerPrefs.SetString(storageKey, JsonUtility.ToJson(created));
         PlayerPrefs.Save();
         return created;
+    }
+
+    private void SaveActivePuzzleProgressIfNeeded()
+    {
+        if (gameController == null ||
+            activePuzzleData == null ||
+            string.IsNullOrEmpty(activeLevelSaveKey) ||
+            !gameController.TryCaptureProgress(activePuzzleData, out SudokuLevelProgressData progressData))
+        {
+            return;
+        }
+
+        PlayerPrefs.SetString(activeLevelSaveKey, JsonUtility.ToJson(progressData));
+        PlayerPrefs.Save();
+        Debug.Log("Saved sudoku level progress: " + activeLevelSaveKey, this);
+    }
+
+    private static bool TryLoadLevelProgress(string saveKey, out SudokuLevelProgressData progressData)
+    {
+        progressData = null;
+
+        if (string.IsNullOrEmpty(saveKey))
+        {
+            return false;
+        }
+
+        string json = PlayerPrefs.GetString(saveKey, string.Empty);
+        if (string.IsNullOrEmpty(json))
+        {
+            return false;
+        }
+
+        progressData = JsonUtility.FromJson<SudokuLevelProgressData>(json);
+        bool isValid = progressData != null &&
+                       progressData.Values != null &&
+                       progressData.Values.Length == SudokuPuzzleData.BoardLength * SudokuPuzzleData.BoardLength;
+
+        if (isValid)
+        {
+            Debug.Log("Loaded sudoku level progress: " + saveKey);
+        }
+        else
+        {
+            Debug.LogWarning("Ignored invalid sudoku level progress: " + saveKey);
+        }
+
+        return isValid;
+    }
+
+    private static void DeleteLevelProgress(string saveKey)
+    {
+        if (string.IsNullOrEmpty(saveKey) || !PlayerPrefs.HasKey(saveKey))
+        {
+            return;
+        }
+
+        PlayerPrefs.DeleteKey(saveKey);
+        PlayerPrefs.Save();
+    }
+
+    private static string GetLevelProgressKey(SudokuGameMode mode, SudokuDifficulty difficulty, SudokuPuzzleSet puzzleSet, int levelIndex)
+    {
+        string setKey = puzzleSet != null ? puzzleSet.Key : string.Empty;
+        return string.Format("{0}{1}_{2}_{3}_{4}", LevelProgressPrefix, mode, difficulty, setKey, levelIndex);
+    }
+
+    private static string GetLegacyLevelProgressKey(SudokuGameMode mode, SudokuDifficulty difficulty, int levelIndex)
+    {
+        return string.Format("{0}{1}_{2}_{3}_{4}", LevelProgressPrefix, mode, difficulty, string.Empty, levelIndex);
+    }
+
+    private static PendingPuzzleStart CreatePendingPuzzleStart(
+        SudokuGameMode mode,
+        SudokuDifficulty difficulty,
+        int levelIndex,
+        int levelCount,
+        string progressKey,
+        SudokuPuzzleSet puzzleSet,
+        SudokuPuzzleData puzzleData,
+        string saveKey,
+        SudokuLevelProgressData savedProgress)
+    {
+        return new PendingPuzzleStart
+        {
+            Mode = mode,
+            Difficulty = difficulty,
+            LevelIndex = levelIndex,
+            LevelCount = levelCount,
+            ProgressKey = progressKey,
+            PuzzleSet = puzzleSet,
+            PuzzleData = puzzleData,
+            SaveKey = saveKey,
+            SavedProgress = savedProgress
+        };
     }
 
     private int CreateDailyHoles(int index)
@@ -785,6 +1190,36 @@ public sealed class SudokuAppController : MonoBehaviour
         if (gameController != null)
         {
             gameController.HideGameplayForMenu();
+        }
+    }
+
+    private void ShowBottomNavForCurrentPage(bool visible)
+    {
+        shouldShowBottomNav = visible;
+        SetBottomNavVisible(visible);
+    }
+
+    private void SetBottomNavVisible(bool visible)
+    {
+        if (bottomNav == null)
+        {
+            Transform nav = FindSceneTransformByName(BottomNavName);
+            bottomNav = nav != null ? nav.gameObject : null;
+        }
+
+        if (bottomNav == null)
+        {
+            return;
+        }
+
+        if (bottomNav.activeSelf != visible)
+        {
+            bottomNav.SetActive(visible);
+        }
+
+        if (visible)
+        {
+            bottomNav.transform.SetAsLastSibling();
         }
     }
 
