@@ -854,6 +854,7 @@ MonoBehaviour:
   selectedColor: {r: 0.83, g: 0.91, b: 1, a: 1}
   fixedNumberColor: {r: 0.16, g: 0.16, b: 0.16, a: 1}
   editableNumberColor: {r: 0.08, g: 0.28, b: 0.75, a: 1}
+  hintNumberColor: {r: 0.05, g: 0.55, b: 0.28, a: 1}
   okNumberColor: {r: 1, g: 1, b: 1, a: 1}
   noteNumberColor: {r: 0.28, g: 0.36, b: 0.48, a: 1}
   lockCountdownColor: {r: 0.16, g: 0.16, b: 0.16, a: 1}
